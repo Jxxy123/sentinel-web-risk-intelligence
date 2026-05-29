@@ -744,7 +744,7 @@ Please ensure all code follows the existing style conventions and includes appro
 
 ## 📄 License
 
-This project is licensed under the **MIT License** - see the [LICENSE] file for details.
+This project is licensed under the **MIT License** - see the (LICENSE) file for details.
 
 Copyright (c) 2026 Jxxy123
 
