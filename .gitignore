@@ -1,0 +1,16 @@
+# 🔑 Security & Sensitive API Keys (CRITICAL)
+backend/.env
+frontend/.env.local
+
+# 🗄️ Local Databases & Storage
+backend/sentinel.db
+
+# 🐍 Python Caches & Compiled Files
+**/__pycache__/
+*.pyc
+
+# 📦 Node Dependencies (Massive Folders)
+frontend/node_modules/
+
+# 🚀 Next.js Production Build Outputs
+frontend/.next/

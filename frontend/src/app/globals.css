@@ -1,0 +1,452 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@300;400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─────────────────────────────────────────
+   ROOT VARIABLES
+───────────────────────────────────────── */
+:root {
+  --bg-primary: #050810;
+  --bg-surface: #080D1A;
+  --bg-panel: #0D1525;
+  --border: #1A2540;
+  --accent: #0066FF;
+  --accent-dim: rgba(0, 102, 255, 0.15);
+  --critical: #FF2D55;
+  --high: #FF6B00;
+  --medium: #F5A623;
+  --low: #00E87A;
+  
+  /* ── VISUAL CONTRAST SYSTEM TUNING ── */
+  --text: #EEF2FF;          /* Brightened core text base color */
+  --muted: #8FA3C8;         /* Swapped out old invisible #5C6A88 token */
+  --cyan: #00D4FF;
+}
+
+/* ─────────────────────────────────────────
+   BASE RESET
+───────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  font-size: 16px;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─────────────────────────────────────────
+   ANIMATED BACKGROUND SYSTEM
+───────────────────────────────────────── */
+
+/* Main grid background */
+.sentinel-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-color: #050810;
+  background-image:
+    linear-gradient(rgba(0, 102, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 102, 255, 0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+}
+
+/* Radial glow orbs */
+.sentinel-bg::before {
+  content: '';
+  position: absolute;
+  top: -20%;
+  left: -10%;
+  width: 60%;
+  height: 60%;
+  background: radial-gradient(ellipse, rgba(0, 102, 255, 0.08) 0%, transparent 70%);
+  animation: orbDrift1 20s ease-in-out infinite alternate;
+}
+
+.sentinel-bg::after {
+  content: '';
+  position: absolute;
+  bottom: -20%;
+  right: -10%;
+  width: 50%;
+  height: 50%;
+  background: radial-gradient(ellipse, rgba(0, 212, 255, 0.06) 0%, transparent 70%);
+  animation: orbDrift2 25s ease-in-out infinite alternate;
+}
+
+@keyframes orbDrift1 {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(5%, 3%) scale(1.1); }
+}
+
+@keyframes orbDrift2 {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(-5%, -3%) scale(1.15); }
+}
+
+/* Animated scan line */
+.scan-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.scan-overlay::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 102, 255, 0.3) 20%,
+    rgba(0, 212, 255, 0.8) 50%,
+    rgba(0, 102, 255, 0.3) 80%,
+    transparent 100%
+  );
+  animation: scanLine 8s linear infinite;
+  top: 0;
+}
+
+@keyframes scanLine {
+  0% { top: -2px; opacity: 0; }
+  5% { opacity: 1; }
+  95% { opacity: 0.5; }
+  100% { top: 100vh; opacity: 0; }
+}
+
+/* Floating particles */
+.particles-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* ─────────────────────────────────────────
+   PANEL / CARD STYLES
+───────────────────────────────────────── */
+
+.panel {
+  background: rgba(8, 13, 26, 0.85);
+  border: 1px solid rgba(26, 37, 64, 0.95); /* Structural container border weight bump */
+  border-radius: 12px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  position: relative;
+  overflow: hidden;
+}
+
+.panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(0, 102, 255, 0.03) 0%,
+    transparent 50%,
+    rgba(0, 212, 255, 0.02) 100%
+  );
+  pointer-events: none;
+}
+
+.panel-glow {
+  box-shadow:
+    0 0 0 1px rgba(0, 102, 255, 0.14),
+    0 4px 24px rgba(0, 0, 0, 0.55),
+    0 0 60px rgba(0, 102, 255, 0.06);
+}
+
+/* ─────────────────────────────────────────
+   RISK LEVEL COLORS
+───────────────────────────────────────── */
+
+.risk-critical {
+  color: #FF2D55;
+  text-shadow: 0 0 20px rgba(255, 45, 85, 0.5);
+}
+
+.risk-high {
+  color: #FF6B00;
+  text-shadow: 0 0 20px rgba(255, 107, 0, 0.4);
+}
+
+.risk-medium {
+  color: #F5A623;
+  text-shadow: 0 0 20px rgba(245, 166, 35, 0.4);
+}
+
+.risk-low {
+  color: #00E87A;
+  text-shadow: 0 0 20px rgba(0, 232, 122, 0.4);
+}
+
+.badge-critical {
+  background: rgba(255, 45, 85, 0.15);
+  border: 1px solid rgba(255, 45, 85, 0.4);
+  color: #FF2D55;
+}
+
+.badge-high {
+  background: rgba(255, 107, 0, 0.15);
+  border: 1px solid rgba(255, 107, 0, 0.4);
+  color: #FF6B00;
+}
+
+.badge-medium {
+  background: rgba(245, 166, 35, 0.15);
+  border: 1px solid rgba(245, 166, 35, 0.4);
+  color: #F5A623;
+}
+
+.badge-low {
+  background: rgba(0, 232, 122, 0.15);
+  border: 1px solid rgba(0, 232, 122, 0.4);
+  color: #00E87A;
+}
+
+/* ─────────────────────────────────────────
+   PROGRESS BAR
+───────────────────────────────────────── */
+
+.progress-track {
+  background: rgba(26, 37, 64, 0.8);
+  border-radius: 100px;
+  overflow: hidden;
+  height: 4px;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 100px;
+  background: linear-gradient(90deg, #0044CC, #0066FF, #00AAFF);
+  background-size: 200% 100%;
+  animation: progressShimmer 2s linear infinite;
+  transition: width 0.3s ease;
+}
+
+@keyframes progressShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ─────────────────────────────────────────
+   ACCENT BUTTON
+───────────────────────────────────────── */
+
+.btn-primary {
+  background: linear-gradient(135deg, #0055DD, #0077FF);
+  border: 1px solid rgba(0, 119, 255, 0.3);
+  color: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: 'Syne', sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.btn-primary:hover::before {
+  opacity: 1;
+}
+
+.btn-primary:hover {
+  box-shadow: 0 0 30px rgba(0, 102, 255, 0.4), 0 4px 16px rgba(0, 0, 0, 0.3);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+/* ─────────────────────────────────────────
+   INPUT FIELD
+───────────────────────────────────────── */
+
+.search-input {
+  background: rgba(13, 21, 37, 0.9);
+  border: 1px solid rgba(26, 37, 64, 0.9);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: rgba(0, 102, 255, 0.6);
+  box-shadow: 0 0 0 3px rgba(0, 102, 255, 0.1), inset 0 0 20px rgba(0, 102, 255, 0.03);
+  background: rgba(13, 21, 37, 1);
+}
+
+.search-input::placeholder {
+  color: var(--muted);
+}
+
+/* ─────────────────────────────────────────
+   MONOSPACE / DATA TEXT
+───────────────────────────────────────── */
+
+.mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.data-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;                /* Lifted from 10px to stop layout truncation squish */
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.display-font {
+  font-family: 'Syne', sans-serif;
+}
+
+/* ─────────────────────────────────────────
+   ANIMATED DIVIDER
+───────────────────────────────────────── */
+
+.divider-glow {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 102, 255, 0.3) 30%,
+    rgba(0, 212, 255, 0.5) 50%,
+    rgba(0, 102, 255, 0.3) 70%,
+    transparent 100%
+  );
+}
+
+/* ─────────────────────────────────────────
+   RISK SCORE RING
+───────────────────────────────────────── */
+
+@keyframes ringReveal {
+  from { stroke-dashoffset: 339.29; }
+}
+
+.ring-animate {
+  animation: ringReveal 1.5s ease-out forwards;
+  stroke-dasharray: 339.29;
+}
+
+/* ─────────────────────────────────────────
+   AGENT ACTIVITY PULSE
+───────────────────────────────────────── */
+
+.agent-pulse {
+  animation: agentPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes agentPulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+/* ─────────────────────────────────────────
+   SCROLLBAR
+───────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 102, 255, 0.3);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 102, 255, 0.6);
+}
+
+/* ─────────────────────────────────────────
+   GLOW RING ANIMATION
+───────────────────────────────────────── */
+
+.glow-ring {
+  box-shadow:
+    0 0 0 1px rgba(0, 102, 255, 0.2),
+    0 0 20px rgba(0, 102, 255, 0.1),
+    0 0 40px rgba(0, 102, 255, 0.05);
+}
+
+/* ─────────────────────────────────────────
+   TABLE
+───────────────────────────────────────── */
+
+.sentinel-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.sentinel-table th {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;                /* Boosted from 10px to establish clear contrast hierarchy */
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid rgba(26, 37, 64, 0.6);
+}
+
+.sentinel-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(26, 37, 64, 0.3);
+  font-size: 14px;
+}
+
+.sentinel-table tr:hover td {
+  background: rgba(0, 102, 255, 0.03);
+}
+
+/* ─────────────────────────────────────────
+   ANIMATED NOISE OVERLAY
+───────────────────────────────────────── */
+.noise-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0.02;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 200px 200px;
+}
