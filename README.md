@@ -469,29 +469,24 @@ Create `backend/.env` from the provided template. All required variables:
 
 ```env
 # ── AI Models ──────────────────────────────────────────────────────
-OPENAI_API_KEY=sk-...                      # Required: GPT-4o for agent reasoning
-ANTHROPIC_API_KEY=sk-ant-...               # Optional: Claude fallback LLM
+# ── Groq Free-Tier Inference Routing ──────────────────────────────
+GROQ_API_KEY="your_groq_api_key_here"
+OPENAI_API_KEY="your_groq_api_key_here"
+OPENAI_BASE_URL="https://api.groq.com/openai/v1"
+FREE_TIER_MODEL="llama-3.3-70b-versatile"
 
-# ── Bright Data ─────────────────────────────────────────────────────
-BRIGHT_DATA_API_KEY=...                    # Required: master API key
-BRIGHT_DATA_SERP_API_URL=https://api.brightdata.com/serp
-BRIGHT_DATA_WEB_UNLOCKER_URL=https://api.brightdata.com/request
-BRIGHT_DATA_PROXY_HOST=brd.superproxy.io
-BRIGHT_DATA_PROXY_PORT=22225
-BRIGHT_DATA_PROXY_USER=brd-customer-XXXX-zone-datacenter
-BRIGHT_DATA_PROXY_PASS=...
-BRIGHT_DATA_ZONE=datacenter
+# ── Bright Data Infrastructure Authentication ───────────────────
+BRIGHT_DATA_API_KEY="your_bright_data_api_key_here"
+BRIGHT_DATA_PROXY_HOST="brd.superproxy.io"
+BRIGHT_DATA_PROXY_PORT=33335
+DATA_CENTER_PROXY="http://brd-customer-XXXX-zone-data_center:PASS@brd.superproxy.io:33335"
+ISP_PROXY="http://brd-customer-XXXX-zone-isp:PASS@brd.superproxy.io:33335"
 
-# ── Application ─────────────────────────────────────────────────────
-APP_ENV=development
-APP_HOST=0.0.0.0
+# ── Application Configuration ──────────────────────────────────────
+APP_ENV="development"
+APP_HOST="127.0.0.1"
 APP_PORT=8000
-CORS_ORIGINS=http://localhost:3000
-
-# ── Storage ─────────────────────────────────────────────────────────
-DATABASE_URL=sqlite:///./sentinel.db
-CHROMA_PERSIST_DIR=./chroma_db
-SECRET_KEY=change-this-in-production
+CORS_ORIGINS="http://localhost:3000"
 ```
 
 > **Where to find your Bright Data credentials:**
@@ -621,20 +616,9 @@ These historical cases surface rich, real intelligence from the live web — ide
 
 ### Demo Video Script
 
-```
-1. Open dashboard → show hero search panel and branding
-2. Click "Evergrande" demo button
-3. Show agent terminal activating — live log lines per agent
-4. Narrate: "Recon Agent is calling Bright Data SERP API right now"
-5. Narrate: "Scraping Agent is bypassing CAPTCHA-protected portals"
-6. Show 3-column result layout — left alerts, center summary, right score ring
-7. Open "DETECTED RISK SIGNALS" to show signal breakdown
-8. Open "INTELLIGENCE SOURCES" to show live Bright Data URLs
-9. Switch to Investigation History tab
-10. Run FTX — show a second investigation completing
-11. Switch to Executive Reports tab
-12. Close: "Without Bright Data, none of these sources were accessible"
-```
+See Sentinel Web-Risk in action! Watch our 2-minute submission walkthrough showing how our autonomous AI agents leverage Bright Data pipelines to detect real-time corporate threat matrices.
+
+👉 **[Watch the Sentinel Web-Risk Hackathon Demo Video](https://www.youtube.com/watch?v=dQw4w9WgXcQ)**
 
 ---
 
@@ -696,37 +680,27 @@ sentinel-web-risk/
 
 ## 🚢 Deployment
 
-### Docker Compose (Local Full-Stack)
+The absolute easiest way to deploy this full-stack monorepo is using **Render** for the backend and **Vercel** for the frontend. Both platforms connect directly to GitHub for automatic zero-configuration deployments.
 
-```bash
-# From project root
-docker-compose up --build
+### 🐍 Backend Deployment (Render)
+1. Create a free account at [Render.com](https://render.com) and click **New +** > **Web Service**.
+2. Connect your GitHub account and select the `sentinel-web-risk-intelligence` repository.
+3. Configure the settings exactly like this to target the backend subfolder:
+   * **Root Directory:** `backend`
+   * **Runtime:** `Python 3`
+   * **Build Command:** `pip install -r requirements.txt`
+   * **Start Command:** `python main.py`
+4. Click **Advanced**, scroll to **Environment Variables**, and add your secrets (`GROQ_API_KEY`, `BRIGHT_DATA_API_KEY`, etc.).
+5. Click **Deploy Web Service**.
 
-# Backend: http://localhost:8000
-# Frontend: http://localhost:3000
-```
+### 📐 Frontend Deployment (Vercel)
+1. Go to [Vercel.com](https://vercel.com), sign in with GitHub, and click **Add New** > **Project**.
+2. Import your `sentinel-web-risk-intelligence` repository.
+3. Under **Root Directory**, click **Edit** and select the `frontend` folder.
+4. Open the **Environment Variables** section and add your live Render URL:
+   * `NEXT_PUBLIC_API_URL` = `https://your-backend-service.onrender.com`
+5. Click **Deploy**.
 
-### Production Deployment (Railway + Vercel)
-
-**Backend → Railway:**
-```bash
-npm install -g @railway/cli
-railway login
-cd backend
-railway init
-railway up
-# Note your Railway backend URL
-```
-
-**Frontend → Vercel:**
-```bash
-npm install -g vercel
-cd frontend
-vercel deploy --prod
-# Set environment variables in Vercel dashboard:
-# NEXT_PUBLIC_API_URL = https://your-railway-backend.railway.app
-# NEXT_PUBLIC_WS_URL  = wss://your-railway-backend.railway.app
-```
 
 ---
 
