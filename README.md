@@ -124,8 +124,8 @@ Traditional risk intelligence systems fail because critical web data is locked b
 | CAPTCHA-protected legal portals | **Scraping Browser** | SEC filings, court records, regulatory notices |
 | Geo-blocked regional news | **Proxy Network** | Local news from China, EU, Southeast Asia |
 | JavaScript-heavy hiring platforms | **Web Unlocker** | LinkedIn layoff patterns, Glassdoor sentiment |
-| Real-time search intelligence | **SERP API** | Live news, press releases, financial signals[cite: 11] |
-| AI-to-web live connectivity | **MCP Server** | Agent-native web access without manual tooling[cite: 11] |
+| Real-time search intelligence | **SERP API** | Live news, press releases, financial signals |
+| AI-to-web live connectivity | **MCP Server** | Agent-native web access without manual tooling |
 
 ---
 
@@ -133,9 +133,9 @@ Traditional risk intelligence systems fail because critical web data is locked b
 
 To streamline high-stress security monitoring, Sentinel integrates a real-time, zero-latency **Speechmatics** input pipeline built directly into the interface.
 
-* **Hardware Core Ingestion:** Taps directly into browser recording layers to translate speech waveforms into data text locally[cite: 10].
-* **Command Cleaning Architecture:** Automatically strips pipeline conversational modifiers (e.g., *"Scan"*, *"Investigate"*, or *"Check"*) to map raw targets instantly[cite: 10].
-* **Visual Telemetry Feedback:** Features an integrated status subsystem tracking `SPEECHMATICS ACTIVE` and `SPEECHMATICS LISTENING` states securely[cite: 10].
+* **Hardware Core Ingestion:** Taps directly into browser recording layers to translate speech waveforms into data text locally.
+* **Command Cleaning Architecture:** Automatically strips pipeline conversational modifiers (e.g., *"Scan"*, *"Investigate"*, or *"Check"*) to map raw targets instantly.
+* **Visual Telemetry Feedback:** Features an integrated status subsystem tracking `SPEECHMATICS ACTIVE` and `SPEECHMATICS LISTENING` states securely.
 
 ---
 
@@ -630,7 +630,7 @@ These historical cases surface rich, real intelligence from the live web — ide
 
 See Sentinel Web-Risk in action! Watch our 2-minute submission walkthrough showing how our autonomous AI agents leverage Bright Data pipelines to detect real-time corporate threat matrices.
 
-👉 **[Watch the Sentinel Web-Risk Hackathon Demo Video](https://www.youtube.com/watch?v=dQw4w9WgXcQ)**
+👉 **[Watch the Sentinel Web-Risk Hackathon Demo Video]([https://www.youtube.com/watch?v=dQw4w9WgXcQ](https://youtu.be/ttH9wO2Tg5E?si=P_xU1x_i6n5axyG8))**
 
 ---
 
