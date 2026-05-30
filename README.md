@@ -10,7 +10,7 @@
 
 ### Autonomous Predictive Vendor Risk Intelligence Platform
 
-**Powered by Bright Data · Routed via AI/ML API · Built with CrewAI**
+**Powered by Bright Data · Transcribed via Speechmatics · Built with CrewAI**
 
 <br />
 
@@ -19,8 +19,8 @@
 [![Next.js](https://img.shields.io/badge/Next.js-14-black?style=flat-square&logo=next.js&logoColor=white)](https://nextjs.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![CrewAI](https://img.shields.io/badge/CrewAI-Multi--Agent-FF6B00?style=flat-square&logoColor=white)](https://crewai.com)
-[![AI/ML API](https://img.shields.io/badge/AI/ML%20API-Model%20Router-7B61FF?style=flat-square&logoColor=white)](https://aimlapi.com)
 [![Bright Data](https://img.shields.io/badge/Bright%20Data-Powered-0066FF?style=flat-square&logoColor=white)](https://brightdata.com)
+[![Speechmatics](https://img.shields.io/badge/Speechmatics-Voice%20Ingestion-FF2D55?style=flat-square&logo=microphone&logoColor=white)](https://speechmatics.com)
 [![Hackathon](https://img.shields.io/badge/lablab.ai-Hackathon%202026-7B61FF?style=flat-square&logoColor=white)](https://lablab.ai)
 
 <br />
@@ -43,6 +43,7 @@
 - [The Problem](#-the-problem)
 - [The Solution](#-the-solution)
 - [What Bright Data Makes Possible](#-what-bright-data-makes-possible)
+- [Speechmatics Voice Orchestration](#-speechmatics-voice-orchestration)
 - [System Architecture](#-system-architecture)
 - [AI Agent System](#-ai-agent-system)
 - [Tech Stack](#-tech-stack)
@@ -63,7 +64,7 @@
 
 **Sentinel Web-Risk** is an autonomous, AI-powered enterprise intelligence platform that detects early warning signs of vendor instability, financial collapse, compliance violations, and operational disruption — **before** they cause damage.
 
-Unlike traditional third-party risk management systems that rely on outdated compliance audits, self-reported vendor documentation, and static databases, Sentinel continuously investigates the **live open web** using six specialized AI agents and Bright Data's global web infrastructure.
+Unlike traditional third-party risk management systems that rely on outdated compliance audits, self-reported vendor documentation, and static databases, Sentinel continuously investigates the **live open web** using six specialized AI agents, Speechmatics voice command pipelines, and Bright Data's global web infrastructure.
 
 The result: **predictive vendor risk intelligence** that enterprises can act on — not just historical data they can only react to.
 
@@ -72,33 +73,23 @@ The result: **predictive vendor risk intelligence** that enterprises can act on 
 | Capability | Description |
 |---|---|
 | 🔍 **Autonomous Investigation** | 6 AI agents independently investigate any vendor without human input |
+| 🎙️ **Speechmatics Voice Command** | Real-time speech-to-text pipeline for hands-free query stream routing |
 | 🌐 **Live Web Intelligence** | Real-time SERP, protected portals, geo-restricted sources |
 | 🧠 **Predictive Risk Scoring** | Dynamic 0–100 score across 5 risk dimensions |
 | 🔓 **Zero-Trust Architecture** | Never relies on vendor-submitted data — independently verifies everything |
-| 🗺️ **Multilingual Intelligence** | Processes regional news, foreign legal filings, local regulatory data |
-| ⚡ **Real-Time Alerts** | WebSocket-powered live progress with agent-by-agent transparency |
+| ⚡ **Real-Time Telemetry Feed** | WebSocket-powered live progress with absolute layout transparency |
 
 ---
 
 ## 🚨 The Problem
 
-Modern enterprises depend on thousands of global third-party vendors. When a critical supplier collapses, the damage is measured in:
+Modern enterprises depend on thousands of global third-party vendors. When a critical supplier collapses, the damage is immense:
 
 - **$847M** — average cost of a major supply chain disruption *(Interos, 2023)*
 - **73 days** — average time to detect a vendor failure in progress
 - **68%** of enterprises discovered vendor issues only after operational impact had already occurred
 
-**Why existing tools fail:**
-
-| Platform | Critical Limitation |
-|---|---|
-| Vanta | Relies on vendor-submitted compliance documentation |
-| Interos | Uses delayed macro-level datasets — not live signals |
-| Recorded Future | Cybersecurity-focused; misses financial/operational risk |
-| Dataminr | Event-centric alerts; not predictive vendor intelligence |
-| Riskmethods | Limited autonomous AI investigation capability |
-
-The common thread: **they are reactive, not predictive**. And they are blind to the web signals that appear weeks before a vendor collapses.
+**Why existing tools fail:** Existing tools are reactive and blind to the web signals that appear weeks before a vendor collapses. They rely on static databases and vendor-submitted compliance documents.
 
 ---
 
@@ -106,17 +97,19 @@ The common thread: **they are reactive, not predictive**. And they are blind to 
 
 Sentinel introduces a **Zero-Trust Autonomous Vendor Intelligence Architecture**.
 
-Instead of trusting anything a vendor tells you, the platform deploys six AI agents to independently investigate the vendor using live global web intelligence — sourced, verified, and synthesized in real time.
+Instead of relying on manual inputs, analysts launch voice commands directly into the terminal UI. The platform deploys six autonomous AI agents to cross-examine live data streams via Bright Data infrastructure, synthesizing multi-dimensional threat cards instantly.
 
 ```
-User enters vendor name
-        ↓
+User triggers Speechmatics input
+↓
+Audio streams parsed and cleansed into clean domains
+↓
 6 AI Agents autonomously investigate
-        ↓
+↓
 Bright Data fetches live, protected, geo-restricted intelligence
-        ↓
+↓
 Risk signals identified, verified, and scored
-        ↓
+↓
 Executive risk report delivered in minutes
 ```
 
@@ -131,10 +124,18 @@ Traditional risk intelligence systems fail because critical web data is locked b
 | CAPTCHA-protected legal portals | **Scraping Browser** | SEC filings, court records, regulatory notices |
 | Geo-blocked regional news | **Proxy Network** | Local news from China, EU, Southeast Asia |
 | JavaScript-heavy hiring platforms | **Web Unlocker** | LinkedIn layoff patterns, Glassdoor sentiment |
-| Real-time search intelligence | **SERP API** | Live news, press releases, financial signals |
-| AI-to-web live connectivity | **MCP Server** | Agent-native web access without manual tooling |
+| Real-time search intelligence | **SERP API** | Live news, press releases, financial signals[cite: 11] |
+| AI-to-web live connectivity | **MCP Server** | Agent-native web access without manual tooling[cite: 11] |
 
-> **Without Bright Data, this system cannot exist.** The intelligence that predicts vendor failure lives behind exactly the barriers that Bright Data is built to remove.
+---
+
+## 🎙️ Speechmatics Voice Orchestration
+
+To streamline high-stress security monitoring, Sentinel integrates a real-time, zero-latency **Speechmatics** input pipeline built directly into the interface.
+
+* **Hardware Core Ingestion:** Taps directly into browser recording layers to translate speech waveforms into data text locally[cite: 10].
+* **Command Cleaning Architecture:** Automatically strips pipeline conversational modifiers (e.g., *"Scan"*, *"Investigate"*, or *"Check"*) to map raw targets instantly[cite: 10].
+* **Visual Telemetry Feedback:** Features an integrated status subsystem tracking `SPEECHMATICS ACTIVE` and `SPEECHMATICS LISTENING` states securely[cite: 10].
 
 ---
 
@@ -147,6 +148,7 @@ graph TB
     subgraph CLIENT["🖥️  CLIENT LAYER"]
         UI["Next.js Dashboard<br/>React · TypeScript · Tailwind"]
         WS["WebSocket Client<br/>Real-time Progress Feed"]
+        SM["🎙️ Speechmatics API<br/>Browser Voice Ingestion Engine"]
     end
 
     subgraph GATEWAY["⚡  API GATEWAY"]
@@ -173,25 +175,8 @@ graph TB
         BD5["MCP Server<br/>Agent-native web access"]
     end
 
-    subgraph INTELLIGENCE["⚙️  INTELLIGENCE PROCESSING"]
-        RE["Risk Scoring Engine<br/>5-dimension signal analysis"]
-        LLM["LLM Reasoning<br/>GPT-4o / Claude"]
-    end
-
-    subgraph STORAGE["🗄️  DATA LAYER"]
-        DB["SQLite<br/>Reports & History"]
-        VDB["ChromaDB<br/>Vector Intelligence Store"]
-    end
-
-    subgraph WEB["🌍  LIVE WEB SOURCES"]
-        N["Regional News Portals"]
-        L["Legal & SEC Filings"]
-        H["Hiring Platforms"]
-        F["Financial Data Sources"]
-        R["Regulatory Databases"]
-    end
-
     UI <-->|"REST API"| API
+    SM -->|"Dynamic Text Injection"| UI
     WS <-->|"ws://jobs/{id}"| API
     API --> BG
     BG --> AGENTS
@@ -362,7 +347,7 @@ graph LR
 | **FastAPI** | 0.115 | High-performance async API + WebSocket |
 | **CrewAI** | 0.70 | Multi-agent orchestration framework |
 | **LangChain** | 0.3 | LLM abstraction and tooling |
-| **AI/ML API Router**| Core Tunnel | High-concurrency OpenAI-compatible layer bypassing Groq TPM walls |
+| **AI/ML API Router**| Core Tunnel | High-concurrency OpenAI-compatible layer ensuring stable multi-agent throughput |
 | **Llama-3.3-70B**  | Turbo | Primary logic processing, signal mapping, and report synthesis |
 | **SQLite** | Built-in | Lightweight MVP database |
 | **ChromaDB** | 0.5 | Vector storage for intelligence retrieval |
@@ -379,6 +364,7 @@ graph LR
 | **Tailwind CSS** | 3.4 | Utility-first styling |
 | **Recharts** | 2.12 | Data visualisation |
 | **Lucide React** | 0.400 | Icon system |
+| **Speechmatics Stream** | Native SDK | Client-side hardware audio ingestion matrix |
 
 ### Bright Data Infrastructure
 
@@ -408,8 +394,8 @@ docker --version    # Any recent version
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/sentinel-web-risk.git
-cd sentinel-web-risk
+git clone https://github.com/Jxxy123/sentinel-web-risk-intelligence.git
+cd sentinel-web-risk-intelligence
 ```
 
 ### 2. Backend Setup
@@ -446,8 +432,10 @@ cd frontend
 npm install
 
 # Create frontend environment file
+# Create frontend environment file
 echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
 echo "NEXT_PUBLIC_WS_URL=ws://localhost:8000"   >> .env.local
+echo "NEXT_PUBLIC_SPEECHMATICS_API_KEY=your_speechmatics_key_here" >> .env.local
 
 # Start frontend
 npm run dev
@@ -493,6 +481,14 @@ CORS_ORIGINS="http://localhost:3000"
 
 > **Where to find your Bright Data credentials:**
 > Dashboard → Your Zone → Access Parameters → copy username and password
+
+Create Frontend Configuration (frontend/.env.local)
+
+```
+NEXT_PUBLIC_API_URL="http://localhost:8000"
+NEXT_PUBLIC_WS_URL="ws://localhost:8000"
+NEXT_PUBLIC_SPEECHMATICS_API_KEY="your_speechmatics_secret_token_here"
+```
 
 ---
 
@@ -767,6 +763,8 @@ Built for the **lablab.ai × Bright Data Hackathon 2026**
 [![Bright Data](https://img.shields.io/badge/Powered%20by-Bright%20Data-0066FF?style=for-the-badge&logoColor=white)](https://brightdata.com)
 &nbsp;
 [![CrewAI](https://img.shields.io/badge/Built%20with-CrewAI-FF6B00?style=for-the-badge&logoColor=white)](https://crewai.com)
+&nbsp;
+[![Speechmatics](https://img.shields.io/badge/Speechmatics-Voice%20Ingestion-FF2D55?style=flat-square&logo=microphone&logoColor=white)](https://speechmatics.com)
 &nbsp;
 [![lablab.ai](https://img.shields.io/badge/Submitted%20to-lablab.ai-7B61FF?style=for-the-badge&logoColor=white)](https://lablab.ai)
 
