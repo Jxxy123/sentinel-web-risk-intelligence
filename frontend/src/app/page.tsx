@@ -148,7 +148,7 @@ const DICTIONARY: Record<string, Record<string, string>> = {
     longTerm: "দীর্ঘমেয়াদী",
     dashboardTab: "ড্যাশবোর্ড",
     historyTab: "অনুসন্ধানের ইতিহাস",
-    reportsTab: "এক্সিকিউティブ রিপোর্ট",
+    reportsTab: "এক্সিকিউটিভ রিপোর্ট",
     foot1: "ব্রাইট ডাটা অবকাঠামো",
     foot2: "ক্রিউ-এআই মাল্টি-এজেন্ট",
     foot3: "জিরো-ট্রাস্ট ইন্টেলিজেন্স",
@@ -157,9 +157,9 @@ const DICTIONARY: Record<string, Record<string, string>> = {
     historyRecords: "রেকর্ড সমূহ",
     historyEmptyTitle: "এখনো কোনো অনুসন্ধান রেকর্ড করা হয়নি",
     historyEmptyDesc: "ড্যাশবোর্ড কন্ট্রোল ইন্টারফেস থেকে আপনার প্রথম সক্রিয় বিশ্লেষণ পরিচালনা করুন",
-    reportsTitle: "এক্সিকিউティブ ইন্টেলিজেন্স রিপোর্ট",
+    reportsTitle: "এক্সিকিউটিভ ইন্টেলিজেন্স রিপোর্ট",
     reportsSubtitle: "বিস্তারিত মাল্টি-এজেন্ট ভেন্ডর গভীর অনুসন্ধান ডেটা সারাংশ",
-    reportsEmptyTitle: "এখনো কোনো এক্সিকিউティブ রিপোর্ট তৈরি হয়নি"
+    reportsEmptyTitle: "এখনো কোনো এক্সিকিউটিভ রিপোর্ট তৈরি হয়নি"
   },
   DE: {
     system: "AUTONOMES ANBIETER-INTELLIGENZSYSTEM — ZERO-TRUST-ARCHITEKTUR",
@@ -185,7 +185,7 @@ const DICTIONARY: Record<string, Record<string, string>> = {
     reportsTab: "Vorstandsberichte",
     foot1: "BRIGHT DATA INFRASTRUKTUR",
     foot2: "CREWAI MULTI-AGENTEN-NETZ",
-    foot3: "ZERO-TRUST-INTELLIGENZ",
+    foot3: "ZERO-TRUST-ARCHITEKTUR",
     historyTitle: "Untersuchungsverlauf",
     historySubtitle: "Alle historischen Anbieter-Bedrohungsprofile im Speicher",
     historyRecords: "DATENSÄTZE",
@@ -641,10 +641,10 @@ export default function Dashboard() {
                 </button>
               </div>
 
-              {/* Active Tracker Badge for Sponsor Track Visibility */}
-              <div className="flex items-center gap-1.5 justify-center mt-2 text-[10px] font-mono tracking-wider text-slate-400">
+              {/* Securely Anchored Speechmatics Status Tracker Bar */}
+              <div className="flex items-center gap-1.5 px-1 text-[11px] font-mono tracking-wider text-slate-400 transition-all duration-200">
                 <span className={`w-1.5 h-1.5 rounded-full ${isListening ? 'bg-red-500 animate-ping' : 'bg-[#00E87A]'}`}></span>
-                <span>{isListening ? "SPEECHMATICS ENGINE: LISTENING..." : "SPEECHMATICS VOICE INPUT READY"}</span>
+                <span>{isListening ? "SPEECHMATICS AUDIO CHANNELS: ACTIVE / LISTENING..." : "SPEECHMATICS VOICE STREAMING: LINKED & READY"}</span>
               </div>
 
               <div className="flex items-center gap-3 pt-2 flex-wrap justify-center">
