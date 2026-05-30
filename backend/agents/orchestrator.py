@@ -24,16 +24,17 @@ from core.risk_engine import (
 
 def get_llm():
     """
-    Build the LLM client using ChatGroq directly.
-    ⚠️  llama-3.3-70b-versatile = 12K TPM on free tier  ← USE THIS
-        llama-3.1-8b-instant    =  6K TPM on free tier  ← AVOID (lower limit)
+    Build the LLM client using AI/ML API (OpenAI Compatible Endpoint).
+    This qualifies for the Hackathon Partner Prize and bypasses Free-Tier limits.
     """
-    groq_key = os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY", "")
-    raw_model = os.getenv("FREE_TIER_MODEL", "llama-3.3-70b-versatile").split("/")[-1]
+    api_key = os.getenv("OPENAI_API_KEY")
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.aimlapi.com/v1")
+    model_name = os.getenv("FREE_TIER_MODEL", "meta-llama/Llama-3.3-70B-Instruct-Turbo")
 
     return LLM(
-        model=f"groq/{raw_model}",
-        api_key=groq_key,
+        model=f"openai/{model_name}",
+        api_key=api_key,
+        base_url=base_url,
         temperature=0.1,
         max_retries=3,
         request_timeout=90,
@@ -448,7 +449,7 @@ class SentinelOrchestrator:
                         return "{}"
                     wait_match = _re.search(r"try again in ([\d.]+)s", err_str)
                     suggested = float(wait_match.group(1)) if wait_match else 60.0
-                    wait_secs = max(suggested + 5, 70)
+                    wait_secs = max(suggested + 5, 10)
                     print(f"[CREW RETRY] Attempt {attempt+1}/4 — TPM limit hit. "
                           f"Waiting {wait_secs:.0f}s for window reset...")
                     time.sleep(wait_secs)
