@@ -175,19 +175,33 @@ graph TB
         BD5["MCP Server<br/>Agent-native web access"]
     end
 
+    subgraph INTELLIGENCE["⚙️  INTELLIGENCE PROCESSING"]
+        RE["Risk Scoring Engine<br/>5-dimension signal analysis"]
+        LLM["LLM Reasoning<br/>GPT-4o / Claude"]
+    end
+
+    subgraph STORAGE["🗄️  DATA LAYER"]
+        DB["SQLite<br/>Reports & History"]
+        VDB["ChromaDB<br/>Vector Intelligence Store"]
+    end
+
+    subgraph WEB["🌍  LIVE WEB SOURCES"]
+        W_SRCS["Global Web Sources<br/>News · Portals · Filings"]
+    end
+
     UI <-->|"REST API"| API
     SM -->|"Dynamic Text Injection"| UI
     WS <-->|"ws://jobs/{id}"| API
     API --> BG
-    BG --> AGENTS
+    BG --> A1
     A1 -->|"search queries"| BD1
     A2 -->|"protected URLs"| BD2
     A2 -->|"CAPTCHA portals"| BD3
     A2 -->|"geo-blocked sources"| BD4
     A1 -->|"agent-native calls"| BD5
-    BD1 & BD2 & BD3 & BD4 & BD5 --> WEB
-    AGENTS --> RE
-    AGENTS --> LLM
+    BD1 & BD2 & BD3 & BD4 & BD5 --> W_SRCS
+    A6 --> RE
+    A6 --> LLM
     RE & LLM --> DB
     LLM --> VDB
     DB --> API
@@ -764,7 +778,7 @@ Built for the **lablab.ai × Bright Data Hackathon 2026**
 &nbsp;
 [![CrewAI](https://img.shields.io/badge/Built%20with-CrewAI-FF6B00?style=for-the-badge&logoColor=white)](https://crewai.com)
 &nbsp;
-[![Speechmatics](https://img.shields.io/badge/Speechmatics-Voice%20Ingestion-FF2D55?style=flat-square&logo=microphone&logoColor=white)](https://speechmatics.com)
+[![Speechmatics](https://img.shields.io/badge/Speechmatics-Voice%20Ingestion-FF2D55?style=for-the-badge&logo=microphone&logoColor=white)](https://speechmatics.com)
 &nbsp;
 [![lablab.ai](https://img.shields.io/badge/Submitted%20to-lablab.ai-7B61FF?style=for-the-badge&logoColor=white)](https://lablab.ai)
 
