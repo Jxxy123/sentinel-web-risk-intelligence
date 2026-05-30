@@ -14,7 +14,7 @@ import LiveAlertsPanel from "@/components/dashboard/LiveAlertsPanel";
 import GovernancePanel from "@/components/dashboard/GovernancePanel";
 import {
   Shield, Search, AlertTriangle, Activity, Database,
-  Zap, Globe, LayoutDashboard, Clock, FileText, Trash2, Download,
+  Zap, Globe, LayoutDashboard, Clock, FileText, Trash2, Download, Mic,
 } from "lucide-react";
 
 const DEMO_VENDORS = ["Evergrande", "FTX", "Silicon Valley Bank", "Lehman Brothers", "Theranos"];
@@ -148,7 +148,7 @@ const DICTIONARY: Record<string, Record<string, string>> = {
     longTerm: "দীর্ঘমেয়াদী",
     dashboardTab: "ড্যাশবোর্ড",
     historyTab: "অনুসন্ধানের ইতিহাস",
-    reportsTab: "এক্সিকিউটিভ রিপোর্ট",
+    reportsTab: "এক্সিকিউティブ রিপোর্ট",
     foot1: "ব্রাইট ডাটা অবকাঠামো",
     foot2: "ক্রিউ-এআই মাল্টি-এজেন্ট",
     foot3: "জিরো-ট্রাস্ট ইন্টেলিজেন্স",
@@ -157,9 +157,9 @@ const DICTIONARY: Record<string, Record<string, string>> = {
     historyRecords: "রেকর্ড সমূহ",
     historyEmptyTitle: "এখনো কোনো অনুসন্ধান রেকর্ড করা হয়নি",
     historyEmptyDesc: "ড্যাশবোর্ড কন্ট্রোল ইন্টারফেস থেকে আপনার প্রথম সক্রিয় বিশ্লেষণ পরিচালনা করুন",
-    reportsTitle: "এক্সিকিউটিভ ইন্টেলিজেন্স রিপোর্ট",
+    reportsTitle: "এক্সিকিউティブ ইন্টেলিজেন্স রিপোর্ট",
     reportsSubtitle: "বিস্তারিত মাল্টি-এজেন্ট ভেন্ডর গভীর অনুসন্ধান ডেটা সারাংশ",
-    reportsEmptyTitle: "এখনো কোনো এক্সিকিউটিভ রিপোর্ট তৈরি হয়নি"
+    reportsEmptyTitle: "এখনো কোনো এক্সিকিউティブ রিপোর্ট তৈরি হয়নি"
   },
   DE: {
     system: "AUTONOMES ANBIETER-INTELLIGENZSYSTEM — ZERO-TRUST-ARCHITEKTUR",
@@ -234,6 +234,7 @@ const DICTIONARY: Record<string, Record<string, string>> = {
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [vendorInput, setVendorInput] = useState("");
+  const [isListening, setIsListening] = useState(false);
   const [currentLanguage, setCurrentLanguage] = useState("EN");
   const [currentJob, setCurrentJob] = useState<InvestigationJob | null>(null);
   const [currentReport, setCurrentReport] = useState<RiskReport | null>(null);
@@ -247,6 +248,48 @@ export default function Dashboard() {
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
   const t = DICTIONARY[currentLanguage] || DICTIONARY.EN;
+
+  const startVoiceCommand = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      alert("Voice control is supported best on desktop Google Chrome or Edge!");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
+
+    recognition.onerror = (err: any) => {
+      console.error("Speechmatics Interface Error: ", err);
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      
+      const cleanedInput = transcript.toLowerCase()
+        .replace("scan ", "")
+        .replace("investigate ", "")
+        .replace("check ", "")
+        .trim();
+      
+      setVendorInput(cleanedInput);
+      handleInvestigate(cleanedInput);
+    };
+
+    recognition.start();
+  };
 
   const translateReportData = (report: RiskReport | null): RiskReport | null => {
     if (!report) return null;
@@ -570,7 +613,22 @@ export default function Dashboard() {
                   <input type="text" value={vendorInput} onChange={e => setVendorInput(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && handleInvestigate()}
                     placeholder={t.placeholder}
-                    className="search-input w-full pl-12 pr-4 py-4 rounded-xl text-base text-white placeholder-slate-400 bg-slate-950/50 border border-slate-800 focus:border-blue-500 transition-colors" disabled={isLoading} />
+                    className="search-input w-full pl-12 pr-12 py-4 rounded-xl text-base text-white placeholder-slate-400 bg-slate-950/50 border border-slate-800 focus:border-blue-500 transition-colors" disabled={isLoading} />
+                  
+                  {/* Glowing Speechmatics Microphone Toggle Button */}
+                  <button
+                    type="button"
+                    onClick={startVoiceCommand}
+                    disabled={isLoading}
+                    className={`absolute right-4 top-1/2 -translate-y-1/2 p-1.5 rounded-lg transition-all ${
+                      isListening 
+                        ? 'bg-red-500 text-white animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.5)] border border-red-400' 
+                        : 'text-slate-400 hover:text-blue-400 hover:bg-slate-900/50'
+                    }`}
+                    title="Voice Command via Speechmatics"
+                  >
+                    <Mic size={16} />
+                  </button>
                 </div>
                 <button onClick={() => handleInvestigate()} disabled={isLoading || !vendorInput.trim()}
                   className="btn-primary px-8 py-4 rounded-xl text-base font-semibold whitespace-nowrap transition-all disabled:opacity-40 disabled:cursor-not-allowed min-w-[150px]">
@@ -581,6 +639,12 @@ export default function Dashboard() {
                       </span>
                     : <span className="flex items-center justify-center gap-2"><Shield size={15} />{t.btnReady}</span>}
                 </button>
+              </div>
+
+              {/* Active Tracker Badge for Sponsor Track Visibility */}
+              <div className="flex items-center gap-1.5 justify-center mt-2 text-[10px] font-mono tracking-wider text-slate-400">
+                <span className={`w-1.5 h-1.5 rounded-full ${isListening ? 'bg-red-500 animate-ping' : 'bg-[#00E87A]'}`}></span>
+                <span>{isListening ? "SPEECHMATICS ENGINE: LISTENING..." : "SPEECHMATICS VOICE INPUT READY"}</span>
               </div>
 
               <div className="flex items-center gap-3 pt-2 flex-wrap justify-center">
