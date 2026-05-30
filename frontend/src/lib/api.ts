@@ -53,11 +53,17 @@ export interface DashboardStats {
 // API Functions
 // ─────────────────────────────────────────
 
-export async function startInvestigation(vendorName: string): Promise<{ job_id: string }> {
+export async function startInvestigation({ 
+  vendor_name, 
+  language = "EN" 
+}: { 
+  vendor_name: string; 
+  language?: string; 
+}): Promise<{ job_id: string }> {
   const res = await fetch(`${API_BASE}/api/investigate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ vendor_name: vendorName }),
+    body: JSON.stringify({ vendor_name: vendor_name.trim(), language }),
   });
   if (!res.ok) throw new Error(`Investigation failed: ${res.statusText}`);
   return res.json();

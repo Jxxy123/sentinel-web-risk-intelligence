@@ -290,7 +290,10 @@ export default function Dashboard() {
     setSerpCalls(0); setLlmCost(0);
 
     try {
-      const { job_id } = await startInvestigation({ url, name });
+      const { job_id } = await startInvestigation({ 
+        vendor_name: name, 
+        language: currentLanguage 
+      });
       setCurrentJob({ job_id, vendor_name: name, status: "queued", progress: 0,
         stage: "queued", message: "Investigation queued...", report: null, error: null,
         started_at: new Date().toISOString() });

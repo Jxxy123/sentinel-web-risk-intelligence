@@ -2,15 +2,15 @@
 
 <br />
 
-<img src="https://img.shields.io/badge/SENTINEL-WEB--RISK-0066FF?style=for-the-badge&logo=shield&logoColor=white&labelColor=050810" alt="Sentinel Web-Risk" />
+<img src="https://img.shields.io/badge/SENTINEL-WEB--RISK%20INTELLIGENCE-0066FF?style=for-the-badge&logo=shield&logoColor=white&labelColor=050810" alt="Sentinel Web-Risk Intelligence" />
 
 <br /><br />
 
-# 🛡️ Sentinel Web-Risk
+# 🛡️ Sentinel Web-Risk Intelligence
 
 ### Autonomous Predictive Vendor Risk Intelligence Platform
 
-**Powered by Bright Data · Built with CrewAI · Deployed on Next.js + FastAPI**
+**Powered by Bright Data · Routed via AI/ML API · Built with CrewAI**
 
 <br />
 
@@ -19,8 +19,8 @@
 [![Next.js](https://img.shields.io/badge/Next.js-14-black?style=flat-square&logo=next.js&logoColor=white)](https://nextjs.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![CrewAI](https://img.shields.io/badge/CrewAI-Multi--Agent-FF6B00?style=flat-square&logoColor=white)](https://crewai.com)
+[![AI/ML API](https://img.shields.io/badge/AI/ML%20API-Model%20Router-7B61FF?style=flat-square&logoColor=white)](https://aimlapi.com)
 [![Bright Data](https://img.shields.io/badge/Bright%20Data-Powered-0066FF?style=flat-square&logoColor=white)](https://brightdata.com)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docker.com)
 [![Hackathon](https://img.shields.io/badge/lablab.ai-Hackathon%202026-7B61FF?style=flat-square&logoColor=white)](https://lablab.ai)
 
 <br />
@@ -362,8 +362,8 @@ graph LR
 | **FastAPI** | 0.115 | High-performance async API + WebSocket |
 | **CrewAI** | 0.70 | Multi-agent orchestration framework |
 | **LangChain** | 0.3 | LLM abstraction and tooling |
-| **OpenAI GPT-4o** | Latest | Primary reasoning and synthesis LLM |
-| **Anthropic Claude** | Latest | Fallback LLM provider |
+| **AI/ML API Router**| Core Tunnel | High-concurrency OpenAI-compatible layer bypassing Groq TPM walls |
+| **Llama-3.3-70B**  | Turbo | Primary logic processing, signal mapping, and report synthesis |
 | **SQLite** | Built-in | Lightweight MVP database |
 | **ChromaDB** | 0.5 | Vector storage for intelligence retrieval |
 | **Uvicorn** | 0.30 | ASGI server |
@@ -469,11 +469,13 @@ Create `backend/.env` from the provided template. All required variables:
 
 ```env
 # ── AI Models ──────────────────────────────────────────────────────
-# ── Groq Free-Tier Inference Routing ──────────────────────────────
-GROQ_API_KEY="your_groq_api_key_here"
-OPENAI_API_KEY="your_groq_api_key_here"
-OPENAI_BASE_URL="https://api.groq.com/openai/v1"
-FREE_TIER_MODEL="llama-3.3-70b-versatile"
+# 🔑 Core Third-Party API Authentication Credentials
+OPENAI_API_KEY="your_aiml_api_key_here"
+BRIGHT_DATA_API_KEY="your_bright_data_api_key_here"
+
+# 🌐 Hackathon Routing Tunnels (Redirects CrewAI to AI/ML API Global Gateway)
+OPENAI_BASE_URL="https://api.aimlapi.com/v1"
+FREE_TIER_MODEL="meta-llama/Llama-3.3-70B-Instruct-Turbo"
 
 # ── Bright Data Infrastructure Authentication ───────────────────
 BRIGHT_DATA_API_KEY="your_bright_data_api_key_here"
