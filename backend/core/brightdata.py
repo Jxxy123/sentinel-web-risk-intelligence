@@ -30,7 +30,7 @@ class BrightDataSERPClient:
         encoded_query = quote_plus(query)
 
         payload = {
-            "zone": "serp_api1",
+            "zone": settings.bright_data_serp_zone,
             "url": f"https://www.google.com/search?q={encoded_query}&hl={lang}",
             "format": "json",
         }
