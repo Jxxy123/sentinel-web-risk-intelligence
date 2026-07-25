@@ -3,7 +3,7 @@ Controlled Bright Data SERP connectivity smoke test.
 
 This script makes exactly one real request using the format generated
 by the Bright Data dashboard. It verifies authentication, zone access,
-upstream status, and receipt of a non-empty response body.
+HTTP status, and receipt of a non-empty response body.
 """
 
 import asyncio
@@ -66,34 +66,22 @@ async def run_smoke_test() -> None:
 
     response.raise_for_status()
 
-    try:
-        envelope = response.json()
-    except ValueError as error:
-        raise SystemExit(
-            "Bright Data returned an unexpected non-JSON envelope."
-        ) from error
+    response_body = response.text
 
-    upstream_status = int(
-        envelope.get("status_code", response.status_code)
-    )
-    response_body = envelope.get("body", "")
-
-    if upstream_status >= 400:
-        safe_preview = str(response_body)[:300]
-        raise SystemExit(
-            f"Bright Data upstream request failed with "
-            f"status {upstream_status}: {safe_preview}"
-        )
-
-    if not response_body:
+    if not response_body.strip():
         raise SystemExit(
             "Bright Data accepted the request but returned an empty body."
         )
 
+    content_type = response.headers.get(
+        "content-type",
+        "not provided",
+    )
+
     print("Bright Data connectivity smoke test passed.")
-    print(f"Outer HTTP status: {response.status_code}")
-    print(f"Upstream status: {upstream_status}")
-    print(f"Response body received: {len(str(response_body))} characters")
+    print(f"HTTP status: {response.status_code}")
+    print(f"Content type: {content_type}")
+    print(f"Response body received: {len(response_body)} characters")
     print(f"Request duration: {elapsed_seconds:.2f} seconds")
     print("Real requests completed: exactly 1")
 
