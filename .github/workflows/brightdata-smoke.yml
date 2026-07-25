@@ -24,6 +24,7 @@ jobs:
       BRIGHT_DATA_API_KEY: ${{ secrets.BRIGHT_DATA_API_KEY }}
       BRIGHT_DATA_SERP_ZONE: ${{ vars.BRIGHT_DATA_SERP_ZONE }}
       EXECUTION_MODE: real
+      PYTHONPATH: .
 
     steps:
       - name: Check out repository
