@@ -29,8 +29,15 @@ class Settings(BaseSettings):
 
     # Bright Data
     bright_data_api_key: str = Field(default="", env="BRIGHT_DATA_API_KEY")
+
+    bright_data_serp_zone: str = Field(
+        default="serp_api1",
+        env="BRIGHT_DATA_SERP_ZONE",
+    )
+
     bright_data_serp_api_url: str = Field(
-        default="https://api.brightdata.com/serp", env="BRIGHT_DATA_SERP_API_URL"
+        default="https://api.brightdata.com/serp",
+        env="BRIGHT_DATA_SERP_API_URL",
     )
     bright_data_web_unlocker_url: str = Field(
         default="https://api.brightdata.com/request", env="BRIGHT_DATA_WEB_UNLOCKER_URL"
