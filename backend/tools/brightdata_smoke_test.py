@@ -1,19 +1,25 @@
 """
-Controlled Bright Data SERP smoke test.
+Controlled Bright Data SERP connectivity smoke test.
 
-This script performs exactly one real SERP API request.
-It does not run the complete Sentinel investigation pipeline.
+This script makes exactly one real request using the format generated
+by the Bright Data dashboard. It verifies authentication, zone access,
+upstream status, and receipt of a non-empty response body.
 """
 
 import asyncio
 import time
+from urllib.parse import quote_plus
 
-from core.brightdata import BrightDataSERPClient
+import httpx
+
 from core.config import settings
 
 
+BRIGHT_DATA_REQUEST_URL = "https://api.brightdata.com/request"
+
+
 async def run_smoke_test() -> None:
-    """Perform one real Bright Data SERP request."""
+    """Perform exactly one real Bright Data SERP request."""
 
     if not settings.bright_data_api_key:
         raise SystemExit(
@@ -25,34 +31,71 @@ async def run_smoke_test() -> None:
             "BRIGHT_DATA_SERP_ZONE is missing. No request was made."
         )
 
-    print("Starting controlled Bright Data smoke test...")
+    query = '"Bright Data" official documentation'
+    encoded_query = quote_plus(query)
+
+    payload = {
+        "zone": settings.bright_data_serp_zone,
+        "url": (
+            "https://www.google.com/search"
+            f"?q={encoded_query}&hl=en"
+        ),
+        "format": "raw",
+        "data_format": "html",
+    }
+
+    headers = {
+        "Authorization": f"Bearer {settings.bright_data_api_key}",
+        "Content-Type": "application/json",
+    }
+
+    print("Starting controlled Bright Data connectivity test...")
     print(f"SERP zone: {settings.bright_data_serp_zone}")
     print("Planned real API requests: 1")
 
-    client = BrightDataSERPClient()
     started_at = time.perf_counter()
 
-    results = await client.search(
-        query='"Bright Data" official documentation',
-        num_results=3,
-        lang="en",
-    )
+    async with httpx.AsyncClient(timeout=45) as client:
+        response = await client.post(
+            BRIGHT_DATA_REQUEST_URL,
+            headers=headers,
+            json=payload,
+        )
 
     elapsed_seconds = time.perf_counter() - started_at
 
-    if not results:
+    response.raise_for_status()
+
+    try:
+        envelope = response.json()
+    except ValueError as error:
         raise SystemExit(
-            "Smoke test failed: Bright Data returned no usable results. "
-            "The API key, zone permission, or zone configuration may need checking."
+            "Bright Data returned an unexpected non-JSON envelope."
+        ) from error
+
+    upstream_status = int(
+        envelope.get("status_code", response.status_code)
+    )
+    response_body = envelope.get("body", "")
+
+    if upstream_status >= 400:
+        safe_preview = str(response_body)[:300]
+        raise SystemExit(
+            f"Bright Data upstream request failed with "
+            f"status {upstream_status}: {safe_preview}"
         )
 
-    print("Bright Data smoke test passed.")
-    print(f"Usable results returned: {len(results)}")
-    print(f"Request duration: {elapsed_seconds:.2f} seconds")
+    if not response_body:
+        raise SystemExit(
+            "Bright Data accepted the request but returned an empty body."
+        )
 
-    for index, result in enumerate(results[:3], start=1):
-        print(f"{index}. {result.get('title', 'Untitled result')}")
-        print(f"   {result.get('url', 'No URL returned')}")
+    print("Bright Data connectivity smoke test passed.")
+    print(f"Outer HTTP status: {response.status_code}")
+    print(f"Upstream status: {upstream_status}")
+    print(f"Response body received: {len(str(response_body))} characters")
+    print(f"Request duration: {elapsed_seconds:.2f} seconds")
+    print("Real requests completed: exactly 1")
 
 
 if __name__ == "__main__":
