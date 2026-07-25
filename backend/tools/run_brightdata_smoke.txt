@@ -1,3 +1,3 @@
-Controlled Bright Data SERP smoke run: 002
+Controlled Bright Data SERP smoke run: 003
 Expected live requests: 1
-Reason: retry after Python import-path correction
+Reason: validate raw HTML SERP connectivity
