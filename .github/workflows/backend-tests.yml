@@ -38,8 +38,10 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Run risk engine tests with coverage
+        env:
+          PYTHONPATH: .
         run: |
-          pytest tests/test_risk_engine.py \
+          python -m pytest tests/test_risk_engine.py \
             -v \
             --cov=core.risk_engine \
             --cov-report=term-missing \
