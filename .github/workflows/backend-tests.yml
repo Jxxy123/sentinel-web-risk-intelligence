@@ -37,11 +37,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
-      - name: Run risk engine tests with coverage
+      - name: Run backend tests with coverage
         env:
           PYTHONPATH: .
         run: |
-          python -m pytest tests/test_risk_engine.py \
+          python -m pytest tests \
             -v \
             --cov=core.risk_engine \
             --cov-report=term-missing \
