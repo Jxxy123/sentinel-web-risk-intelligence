@@ -210,7 +210,7 @@ def test_financial_and_operational_combination_increases_probability() -> None:
 
     probability = calculate_disruption_probability(50, signals)
 
-assert probability == 0.57
+    assert probability == 0.57
 
 
 def test_disruption_probability_is_capped_at_point_99() -> None:
