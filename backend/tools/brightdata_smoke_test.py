@@ -1,25 +1,19 @@
 """
-Controlled Bright Data SERP connectivity smoke test.
+Controlled live test of Sentinel's structured Bright Data SERP client.
 
-This script makes exactly one real request using the format generated
-by the Bright Data dashboard. It verifies authentication, zone access,
-HTTP status, and receipt of a non-empty response body.
+This script performs exactly one real SERP request and verifies that
+Sentinel converts the returned HTML into structured search results.
 """
 
 import asyncio
 import time
-from urllib.parse import quote_plus
 
-import httpx
-
+from core.brightdata import BrightDataSERPClient
 from core.config import settings
 
 
-BRIGHT_DATA_REQUEST_URL = "https://api.brightdata.com/request"
-
-
 async def run_smoke_test() -> None:
-    """Perform exactly one real Bright Data SERP request."""
+    """Perform one real request through Sentinel's SERP client."""
 
     if not settings.bright_data_api_key:
         raise SystemExit(
@@ -31,59 +25,51 @@ async def run_smoke_test() -> None:
             "BRIGHT_DATA_SERP_ZONE is missing. No request was made."
         )
 
-    query = '"Bright Data" official documentation'
-    encoded_query = quote_plus(query)
-
-    payload = {
-        "zone": settings.bright_data_serp_zone,
-        "url": (
-            "https://www.google.com/search"
-            f"?q={encoded_query}&hl=en"
-        ),
-        "format": "raw",
-        "data_format": "html",
-    }
-
-    headers = {
-        "Authorization": f"Bearer {settings.bright_data_api_key}",
-        "Content-Type": "application/json",
-    }
-
-    print("Starting controlled Bright Data connectivity test...")
+    print("Starting structured Bright Data SERP smoke test...")
     print(f"SERP zone: {settings.bright_data_serp_zone}")
-    print("Planned real API requests: 1")
+    print("Planned real API requests: exactly 1")
 
+    client = BrightDataSERPClient()
     started_at = time.perf_counter()
 
-    async with httpx.AsyncClient(timeout=45) as client:
-        response = await client.post(
-            BRIGHT_DATA_REQUEST_URL,
-            headers=headers,
-            json=payload,
-        )
+    results = await client.search(
+        query='"Bright Data" official documentation',
+        num_results=5,
+        lang="en",
+    )
 
     elapsed_seconds = time.perf_counter() - started_at
 
-    response.raise_for_status()
-
-    response_body = response.text
-
-    if not response_body.strip():
+    if not results:
         raise SystemExit(
-            "Bright Data accepted the request but returned an empty body."
+            "Bright Data returned HTML, but Sentinel extracted "
+            "no structured results."
         )
 
-    content_type = response.headers.get(
-        "content-type",
-        "not provided",
-    )
+    for result in results:
+        if not result.get("title"):
+            raise SystemExit(
+                "A structured result is missing its title."
+            )
 
-    print("Bright Data connectivity smoke test passed.")
-    print(f"HTTP status: {response.status_code}")
-    print(f"Content type: {content_type}")
-    print(f"Response body received: {len(response_body)} characters")
+        if not result.get("url"):
+            raise SystemExit(
+                "A structured result is missing its URL."
+            )
+
+        if result.get("source") != "bright_data_serp":
+            raise SystemExit(
+                "A structured result has an unexpected source tag."
+            )
+
+    print("Structured Bright Data SERP test passed.")
+    print(f"Structured results returned: {len(results)}")
     print(f"Request duration: {elapsed_seconds:.2f} seconds")
     print("Real requests completed: exactly 1")
+
+    for index, result in enumerate(results[:3], start=1):
+        print(f"{index}. {result['title']}")
+        print(f"   {result['url']}")
 
 
 if __name__ == "__main__":
