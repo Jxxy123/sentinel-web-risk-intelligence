@@ -3,7 +3,7 @@ Sentinel Web-Risk — Core Configuration
 """
 from pydantic_settings import BaseSettings
 from pydantic import Field
-from typing import List
+from typing import List, Literal
 import os
 
 
@@ -13,6 +13,14 @@ class Settings(BaseSettings):
     app_host: str = Field(default="0.0.0.0", env="APP_HOST")
     app_port: int = Field(default=8000, env="APP_PORT")
     cors_origins: str = Field(default="http://localhost:3000", env="CORS_ORIGINS")
+
+    # Provider execution mode
+    # real = use Bright Data and the configured LLM provider
+    # mock = use deterministic local providers for automated testing
+    execution_mode: Literal["real", "mock"] = Field(
+        default="real",
+        env="EXECUTION_MODE",
+    )
 
     # AI
     openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
@@ -47,6 +55,11 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> List[str]:
         return [o.strip() for o in self.cors_origins.split(",")]
+
+    @property
+    def use_mock_providers(self) -> bool:
+        """Return True when external providers must be replaced by local mocks."""
+        return self.execution_mode == "mock"
 
     class Config:
         env_file = ".env"
