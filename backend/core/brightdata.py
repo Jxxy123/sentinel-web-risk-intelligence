@@ -226,7 +226,7 @@ class BrightDataWebUnlocker:
             "Content-Type": "application/json",
         }
         payload = {
-            "zone": "web_unlocker1",
+            "zone": settings.bright_data_web_unlocker_zone,
             "url": url,
             "format": "raw",
         }
