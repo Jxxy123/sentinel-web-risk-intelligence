@@ -12,7 +12,7 @@ import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional
-from urllib.parse import quote
+from urllib.parse import quote, quote_plus
 
 from crewai import Agent, Crew, LLM, Process, Task
 
@@ -23,6 +23,11 @@ from core.brightdata import (
 )
 from core.brightdata_remote_mcp import remote_mcp_client
 from core.config import settings
+from core.report_calibration import (
+    build_calibrated_report_language,
+    build_evidence_provenance,
+    select_balanced_sources,
+)
 from core.risk_engine import (
     analyze_text_for_signals,
     calculate_disruption_probability,
@@ -643,6 +648,7 @@ class SentinelOrchestrator:
         tools_used: list[str] = []
         search_results: list[SearchResult] = []
         scraped_sections: list[str] = []
+        evidence_provenance: list[dict[str, Any]] = []
         mcp_results_added = 0
 
         await self._emit_progress(
@@ -732,6 +738,12 @@ class SentinelOrchestrator:
             35,
         )
 
+        legal_filing_url = (
+            "https://www.sec.gov/cgi-bin/browse-edgar"
+            f"?company={quote_plus(normalized_vendor)}"
+            "&action=getcompany"
+        )
+
         try:
             unlocker_content = await asyncio.wait_for(
                 self.web_unlocker.fetch_legal_filing(
@@ -749,12 +761,40 @@ class SentinelOrchestrator:
                     tools_used,
                     "Web Unlocker",
                 )
+                evidence_provenance.append(
+                    build_evidence_provenance(
+                        provider="Web Unlocker",
+                        url=legal_filing_url,
+                        content=unlocker_content,
+                        status="success",
+                    )
+                )
+            else:
+                evidence_provenance.append(
+                    build_evidence_provenance(
+                        provider="Web Unlocker",
+                        url=legal_filing_url,
+                        content=None,
+                        status="no_usable_content",
+                    )
+                )
 
             print(
                 "[WEB UNLOCKER] "
                 f"characters={len(unlocker_content or '')}"
             )
         except Exception as error:
+            evidence_provenance.append(
+                build_evidence_provenance(
+                    provider="Web Unlocker",
+                    url=legal_filing_url,
+                    content=None,
+                    status=(
+                        "error:"
+                        f"{type(error).__name__}"
+                    ),
+                )
+            )
             print(
                 "[WEB UNLOCKER WARN] "
                 f"error={type(error).__name__}"
@@ -791,12 +831,49 @@ class SentinelOrchestrator:
                             tools_used,
                             "Remote MCP scrape_as_markdown",
                         )
+                        evidence_provenance.append(
+                            build_evidence_provenance(
+                                provider=(
+                                    "Remote MCP "
+                                    "scrape_as_markdown"
+                                ),
+                                url=scrape_target,
+                                content=mcp_markdown,
+                                status="success",
+                            )
+                        )
+                    else:
+                        evidence_provenance.append(
+                            build_evidence_provenance(
+                                provider=(
+                                    "Remote MCP "
+                                    "scrape_as_markdown"
+                                ),
+                                url=scrape_target,
+                                content=None,
+                                status="no_usable_content",
+                            )
+                        )
 
                     print(
                         "[REMOTE MCP SCRAPE] "
                         f"characters={len(mcp_markdown or '')}"
                     )
                 except Exception as error:
+                    evidence_provenance.append(
+                        build_evidence_provenance(
+                            provider=(
+                                "Remote MCP "
+                                "scrape_as_markdown"
+                            ),
+                            url=scrape_target,
+                            content=None,
+                            status=(
+                                "error:"
+                                f"{type(error).__name__}"
+                            ),
+                        )
+                    )
                     print(
                         "[REMOTE MCP SCRAPE WARN] "
                         f"error={type(error).__name__}"
@@ -832,12 +909,40 @@ class SentinelOrchestrator:
                     tools_used,
                     "Proxy Network",
                 )
+                evidence_provenance.append(
+                    build_evidence_provenance(
+                        provider="Proxy Network",
+                        url=regional_url,
+                        content=regional_content,
+                        status="success",
+                    )
+                )
+            else:
+                evidence_provenance.append(
+                    build_evidence_provenance(
+                        provider="Proxy Network",
+                        url=regional_url,
+                        content=None,
+                        status="no_usable_content",
+                    )
+                )
 
             print(
                 "[PROXY NETWORK] "
                 f"characters={len(regional_content or '')}"
             )
         except Exception as error:
+            evidence_provenance.append(
+                build_evidence_provenance(
+                    provider="Proxy Network",
+                    url=regional_url,
+                    content=None,
+                    status=(
+                        "error:"
+                        f"{type(error).__name__}"
+                    ),
+                )
+            )
             print(
                 "[PROXY NETWORK WARN] "
                 f"error={type(error).__name__}"
@@ -870,7 +975,11 @@ class SentinelOrchestrator:
         pre_signals = analyze_text_for_signals(
             raw_pool
         )
-        pre_score, pre_level, _ = calculate_risk_score(
+        (
+            pre_score,
+            pre_level,
+            pre_confidence,
+        ) = calculate_risk_score(
             pre_signals
         )
 
@@ -953,36 +1062,13 @@ class SentinelOrchestrator:
             raw_output
         )
 
-        verified_summary = str(
-            llm_report.get(
-                "executive_summary",
-                "",
-            )
-        ).strip()
-        verified_findings = _normalize_string_list(
-            llm_report.get(
-                "key_findings",
-                [],
-            )
-        )
-        verified_text = (
-            verified_summary
-            + " "
-            + " ".join(verified_findings)
-        ).strip()
+        # Final scoring is derived only from collected source evidence.
+        # LLM-generated wording is never rescanned as if it were evidence.
+        signals = pre_signals
+        score = pre_score
+        level = pre_level
+        confidence = pre_confidence
 
-        if (
-            not verified_summary
-            or len(verified_text) < 50
-        ):
-            verified_text = raw_pool
-
-        signals = analyze_text_for_signals(
-            verified_text
-        )
-        score, level, confidence = calculate_risk_score(
-            signals
-        )
         disruption_probability = (
             calculate_disruption_probability(
                 score,
@@ -995,161 +1081,161 @@ class SentinelOrchestrator:
 
         await self._emit_progress(
             "reporting",
-            "Compiling the evidence-grounded executive report...",
+            "Compiling the calibrated evidence-grounded report...",
             92,
         )
 
-        signal_count = len(signals)
-        category_count = len(
-            {
-                signal["category"]
-                for signal in signals
-                if signal.get("category")
-            }
-        )
-        source_count = len(search_results)
-        tools_summary = (
-            ", ".join(tools_used)
-            if tools_used
-            else "no live provider returned usable evidence"
+        source_count = len(
+            search_results
         )
 
-        default_summary = (
-            f"{normalized_vendor} was assessed using {source_count} unique "
-            f"live intelligence sources and {tools_summary}. "
-            f"The deterministic signal engine identified {signal_count} "
-            f"risk indicators across {category_count} categories. "
-            f"The current assessment is {level} risk with an estimated "
-            f"{int(disruption_probability * 100)}% 90-day disruption "
-            "probability. This is a point-in-time assessment and should be "
-            "re-evaluated as new evidence becomes available."
-        )
-
-        risk_headline = str(
-            llm_report.get(
-                "risk_headline",
-                (
-                    f"{normalized_vendor} has a {level} point-in-time "
-                    f"risk profile based on {source_count} live sources."
+        calibrated_language = (
+            build_calibrated_report_language(
+                vendor_name=normalized_vendor,
+                score=score,
+                level=level,
+                confidence=confidence,
+                disruption_probability=(
+                    disruption_probability
                 ),
-            )
-        ).strip()
-
-        primary_risk_category = str(
-            llm_report.get(
-                "primary_risk_category",
-                "Operational",
-            )
-        ).strip()
-
-        key_findings = (
-            verified_findings
-            or [
-                (
-                    f"Sentinel collected {source_count} unique live "
-                    "intelligence sources."
+                formatted_signals=(
+                    formatted_signals
                 ),
-                (
-                    f"The signal engine detected {signal_count} indicators "
-                    f"across {category_count} categories."
-                ),
-                (
-                    "This result is a point-in-time assessment; new evidence "
-                    "may change the risk level."
-                ),
-            ]
-        )
-
-        recommended_actions = _normalize_string_list(
-            llm_report.get(
-                "recommended_actions",
-                [],
-            )
-        ) or [
-            "Review the cited evidence before making a vendor decision.",
-            "Request current financial, operational, and compliance documents.",
-            "Define monitoring triggers for material changes in the risk profile.",
-        ]
-
-        monitoring_signals = _normalize_string_list(
-            llm_report.get(
-                "monitoring_signals",
-                [],
+                source_count=source_count,
+                tools_used=tools_used,
+                llm_report=llm_report,
             )
         )
+
+        selected_sources = select_balanced_sources(
+            search_results,
+            max_total=MAX_SOURCE_RECORDS_IN_REPORT,
+            max_serp=8,
+            max_mcp=4,
+        )
+
+        generated_at = datetime.now(
+            timezone.utc
+        ).isoformat()
 
         final_report: dict[str, Any] = {
             "vendor_name": normalized_vendor,
             "risk_score": score,
             "risk_level": level,
             "confidence_score": confidence,
-            "disruption_probability": disruption_probability,
-            "executive_summary": (
-                verified_summary
-                or default_summary
+            "disruption_probability": (
+                disruption_probability
             ),
-            "risk_headline": risk_headline,
-            "primary_risk_category": primary_risk_category,
-            "key_findings": key_findings,
-            "risk_trajectory": str(
-                llm_report.get(
-                    "risk_trajectory",
-                    "Stable",
-                )
-            ).strip(),
-            "recommended_actions": recommended_actions,
-            "monitoring_signals": monitoring_signals,
-            "time_horizon": str(
-                llm_report.get(
-                    "time_horizon",
-                    "Near-term",
-                )
-            ).strip(),
-            "signals": formatted_signals,
-            "sources": [
-                {
-                    "url": result["url"],
-                    "title": result["title"],
-                    "source": result.get(
-                        "source",
-                        "bright_data",
-                    ),
-                }
-                for result in search_results[
-                    :MAX_SOURCE_RECORDS_IN_REPORT
+            "executive_summary": (
+                calibrated_language[
+                    "executive_summary"
                 ]
-                if result.get("url")
-                and result.get("title")
-            ],
+            ),
+            "risk_headline": (
+                calibrated_language[
+                    "risk_headline"
+                ]
+            ),
+            "primary_risk_category": (
+                calibrated_language[
+                    "primary_risk_category"
+                ]
+            ),
+            "key_findings": (
+                calibrated_language[
+                    "key_findings"
+                ]
+            ),
+            "risk_trajectory": (
+                calibrated_language[
+                    "risk_trajectory"
+                ]
+            ),
+            "recommended_actions": (
+                calibrated_language[
+                    "recommended_actions"
+                ]
+            ),
+            "monitoring_signals": (
+                calibrated_language[
+                    "monitoring_signals"
+                ]
+            ),
+            "time_horizon": (
+                calibrated_language[
+                    "time_horizon"
+                ]
+            ),
+            "signals": formatted_signals,
+            "sources": selected_sources,
+            "evidence_provenance": (
+                evidence_provenance
+            ),
             "raw_intelligence": {
-                "search_results_count": source_count,
-                "mcp_unique_results_added": mcp_results_added,
+                "search_results_count": (
+                    source_count
+                ),
+                "mcp_unique_results_added": (
+                    mcp_results_added
+                ),
                 "scraped_content_chars": len(
                     scraped_content
                 ),
-                "bright_data_tools_used": tools_used,
-                "primary_risk_category": primary_risk_category,
-                "risk_headline": risk_headline,
-                "risk_trajectory": str(
-                    llm_report.get(
-                        "risk_trajectory",
-                        "Stable",
+                "bright_data_tools_used": (
+                    tools_used
+                ),
+                "primary_risk_category": (
+                    calibrated_language[
+                        "primary_risk_category"
+                    ]
+                ),
+                "risk_headline": (
+                    calibrated_language[
+                        "risk_headline"
+                    ]
+                ),
+                "risk_trajectory": (
+                    calibrated_language[
+                        "risk_trajectory"
+                    ]
+                ),
+                "time_horizon": (
+                    calibrated_language[
+                        "time_horizon"
+                    ]
+                ),
+                "key_findings": (
+                    calibrated_language[
+                        "key_findings"
+                    ]
+                ),
+                "recommended_actions": (
+                    calibrated_language[
+                        "recommended_actions"
+                    ]
+                ),
+                "evidence_provenance": (
+                    evidence_provenance
+                ),
+                "llm_supporting_fields_received": (
+                    sorted(
+                        llm_report.keys()
                     )
-                ).strip(),
-                "time_horizon": str(
-                    llm_report.get(
-                        "time_horizon",
-                        "Near-term",
-                    )
-                ).strip(),
-                "key_findings": verified_findings,
-                "recommended_actions": recommended_actions,
-                "assessment_type": "point_in_time",
+                    if llm_report
+                    else []
+                ),
+                "scoring_source": (
+                    "collected_live_evidence"
+                ),
+                "language_authority": (
+                    "deterministic_report_calibration"
+                ),
+                "assessment_type": (
+                    "point_in_time"
+                ),
             },
             "status": "completed",
-            "generated_at": datetime.now(
-                timezone.utc
-            ).isoformat(),
+            "generated_at": generated_at,
         }
 
         await self._emit_progress(
