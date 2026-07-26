@@ -1,6 +1,7 @@
 """Offline tests for the genuine Bright Data Remote MCP client."""
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
@@ -180,6 +181,15 @@ def test_connect_is_idempotent(
     assert client.is_connected is False
 
 
+def test_close_is_safe_when_not_connected() -> None:
+    """Closing an unused client must not raise an exception."""
+    client = BrightDataRemoteMCPClient()
+
+    asyncio.run(client.close())
+
+    assert client.is_connected is False
+
+
 def test_list_tools_returns_serializable_metadata() -> None:
     """MCP tool definitions must be converted into plain dictionaries."""
 
@@ -306,6 +316,39 @@ def test_call_tool_serializes_text_and_structured_content() -> None:
     }
 
 
+def test_call_tool_supports_snake_case_response_fields() -> None:
+    """The client must support SDK responses using snake_case fields."""
+
+    class FakeSession:
+        async def call_tool(
+            self,
+            tool_name,
+            arguments,
+        ):
+            return SimpleNamespace(
+                content=[],
+                is_error=True,
+                structured_content={
+                    "error": "controlled",
+                },
+            )
+
+    client = BrightDataRemoteMCPClient()
+    client._session = FakeSession()  # type: ignore[assignment]
+
+    result = asyncio.run(
+        client.call_tool(
+            "search_engine",
+            {},
+        )
+    )
+
+    assert result["is_error"] is True
+    assert result["structured_content"] == {
+        "error": "controlled",
+    }
+
+
 def test_call_tool_rejects_blank_name() -> None:
     """Blank tool names must fail before an MCP request is attempted."""
     client = BrightDataRemoteMCPClient()
@@ -328,3 +371,472 @@ def test_operations_require_active_connection() -> None:
         match="Remote MCP is not connected",
     ):
         asyncio.run(client.list_tools())
+
+
+def test_call_tool_once_opens_and_closes_temporary_session(
+    monkeypatch,
+) -> None:
+    """One-shot tool calls must manage a temporary MCP session."""
+    events: list[str] = []
+    client = BrightDataRemoteMCPClient()
+
+    async def fake_connect() -> None:
+        events.append("connect")
+        client._session = SimpleNamespace()  # type: ignore[assignment]
+
+    async def fake_call_tool(
+        tool_name,
+        arguments,
+    ):
+        events.append("call")
+        assert tool_name == "search_engine"
+        assert arguments == {
+            "query": "Example"
+        }
+
+        return {
+            "is_error": False,
+            "text": "result",
+            "structured_content": None,
+        }
+
+    async def fake_close() -> None:
+        events.append("close")
+        client._session = None
+
+    monkeypatch.setattr(
+        client,
+        "connect",
+        fake_connect,
+    )
+    monkeypatch.setattr(
+        client,
+        "call_tool",
+        fake_call_tool,
+    )
+    monkeypatch.setattr(
+        client,
+        "close",
+        fake_close,
+    )
+
+    result = asyncio.run(
+        client._call_tool_once(
+            "search_engine",
+            {
+                "query": "Example",
+            },
+        )
+    )
+
+    assert result["text"] == "result"
+    assert events == [
+        "connect",
+        "call",
+        "close",
+    ]
+
+
+def test_call_tool_once_reuses_existing_session(
+    monkeypatch,
+) -> None:
+    """An existing MCP session must not be opened or closed again."""
+    events: list[str] = []
+    client = BrightDataRemoteMCPClient()
+    client._session = SimpleNamespace()  # type: ignore[assignment]
+
+    async def forbidden_connect() -> None:
+        raise AssertionError(
+            "connect() must not run for an active session."
+        )
+
+    async def fake_call_tool(
+        tool_name,
+        arguments,
+    ):
+        events.append("call")
+        return {
+            "is_error": False,
+            "text": "reused",
+            "structured_content": None,
+        }
+
+    async def forbidden_close() -> None:
+        raise AssertionError(
+            "close() must not run for a reused session."
+        )
+
+    monkeypatch.setattr(
+        client,
+        "connect",
+        forbidden_connect,
+    )
+    monkeypatch.setattr(
+        client,
+        "call_tool",
+        fake_call_tool,
+    )
+    monkeypatch.setattr(
+        client,
+        "close",
+        forbidden_close,
+    )
+
+    result = asyncio.run(
+        client._call_tool_once(
+            "search_engine",
+            {
+                "query": "Example",
+            },
+        )
+    )
+
+    assert result["text"] == "reused"
+    assert events == ["call"]
+
+
+def test_search_normalizes_json_text_results(
+    monkeypatch,
+) -> None:
+    """JSON MCP search output must match Sentinel's result format."""
+    client = BrightDataRemoteMCPClient()
+
+    async def fake_call_tool_once(
+        tool_name,
+        arguments,
+    ):
+        assert tool_name == "search_engine"
+        assert arguments == {
+            "query": "Example Vendor risk"
+        }
+
+        return {
+            "is_error": False,
+            "text": json.dumps(
+                {
+                    "results": [
+                        {
+                            "title": "Example Report",
+                            "url": "https://example.com/report",
+                            "description": (
+                                "Verified vendor intelligence"
+                            ),
+                        }
+                    ]
+                }
+            ),
+            "structured_content": None,
+        }
+
+    monkeypatch.setattr(
+        client,
+        "_call_tool_once",
+        fake_call_tool_once,
+    )
+
+    results = asyncio.run(
+        client.search(
+            "Example Vendor risk",
+        )
+    )
+
+    assert results == [
+        {
+            "title": "Example Report",
+            "url": "https://example.com/report",
+            "snippet": "Verified vendor intelligence",
+            "source": "bright_data_remote_mcp",
+        }
+    ]
+
+
+def test_search_normalizes_structured_results_and_removes_duplicates(
+    monkeypatch,
+) -> None:
+    """Structured MCP results must be normalized and de-duplicated."""
+    client = BrightDataRemoteMCPClient()
+
+    async def fake_call_tool_once(
+        tool_name,
+        arguments,
+    ):
+        return {
+            "is_error": False,
+            "text": "",
+            "structured_content": {
+                "organic_results": [
+                    {
+                        "name": "First result",
+                        "link": "https://example.com/one",
+                        "summary": "First summary",
+                    },
+                    {
+                        "title": "Duplicate result",
+                        "url": "https://example.com/one",
+                        "snippet": "Duplicate summary",
+                    },
+                    {
+                        "title": "Second result",
+                        "url": "https://example.com/two",
+                        "snippet": "Second summary",
+                    },
+                    {
+                        "title": "Invalid result",
+                        "url": "ftp://example.com/invalid",
+                    },
+                ]
+            },
+        }
+
+    monkeypatch.setattr(
+        client,
+        "_call_tool_once",
+        fake_call_tool_once,
+    )
+
+    results = asyncio.run(
+        client.search(
+            "Example",
+            limit=10,
+        )
+    )
+
+    assert results == [
+        {
+            "title": "First result",
+            "url": "https://example.com/one",
+            "snippet": "First summary",
+            "source": "bright_data_remote_mcp",
+        },
+        {
+            "title": "Second result",
+            "url": "https://example.com/two",
+            "snippet": "Second summary",
+            "source": "bright_data_remote_mcp",
+        },
+    ]
+
+
+def test_search_parses_markdown_links(
+    monkeypatch,
+) -> None:
+    """Markdown MCP search output must be converted into results."""
+    client = BrightDataRemoteMCPClient()
+
+    async def fake_call_tool_once(
+        tool_name,
+        arguments,
+    ):
+        return {
+            "is_error": False,
+            "text": (
+                "[Example One](https://example.com/one)\n"
+                "[Example Two](https://example.com/two)"
+            ),
+            "structured_content": None,
+        }
+
+    monkeypatch.setattr(
+        client,
+        "_call_tool_once",
+        fake_call_tool_once,
+    )
+
+    results = asyncio.run(
+        client.search(
+            "Example",
+        )
+    )
+
+    assert [result["url"] for result in results] == [
+        "https://example.com/one",
+        "https://example.com/two",
+    ]
+
+
+def test_search_stops_for_blank_query_or_non_positive_limit(
+    monkeypatch,
+) -> None:
+    """Invalid local search input must stop before an MCP tool call."""
+    client = BrightDataRemoteMCPClient()
+
+    async def forbidden_call(*args, **kwargs):
+        raise AssertionError(
+            "MCP must not be called for invalid search input."
+        )
+
+    monkeypatch.setattr(
+        client,
+        "_call_tool_once",
+        forbidden_call,
+    )
+
+    assert asyncio.run(
+        client.search("   ")
+    ) == []
+
+    assert asyncio.run(
+        client.search(
+            "Example",
+            limit=0,
+        )
+    ) == []
+
+
+def test_search_returns_empty_for_remote_error(
+    monkeypatch,
+) -> None:
+    """Remote MCP search errors must return an empty result list."""
+    client = BrightDataRemoteMCPClient()
+
+    async def fake_call_tool_once(
+        tool_name,
+        arguments,
+    ):
+        return {
+            "is_error": True,
+            "text": "controlled error",
+            "structured_content": None,
+        }
+
+    monkeypatch.setattr(
+        client,
+        "_call_tool_once",
+        fake_call_tool_once,
+    )
+
+    assert asyncio.run(
+        client.search("Example")
+    ) == []
+
+
+def test_scrape_returns_remote_mcp_markdown(
+    monkeypatch,
+) -> None:
+    """The MCP scraper wrapper must return Markdown text."""
+    client = BrightDataRemoteMCPClient()
+
+    async def fake_call_tool_once(
+        tool_name,
+        arguments,
+    ):
+        assert tool_name == "scrape_as_markdown"
+        assert arguments == {
+            "url": "https://example.com"
+        }
+
+        return {
+            "is_error": False,
+            "text": "# Example Domain",
+            "structured_content": None,
+        }
+
+    monkeypatch.setattr(
+        client,
+        "_call_tool_once",
+        fake_call_tool_once,
+    )
+
+    result = asyncio.run(
+        client.scrape(
+            "https://example.com"
+        )
+    )
+
+    assert result == "# Example Domain"
+
+
+def test_scrape_serializes_structured_content_when_text_is_empty(
+    monkeypatch,
+) -> None:
+    """Structured scraper output must be retained as JSON fallback."""
+    client = BrightDataRemoteMCPClient()
+
+    async def fake_call_tool_once(
+        tool_name,
+        arguments,
+    ):
+        return {
+            "is_error": False,
+            "text": "",
+            "structured_content": {
+                "title": "Example Domain",
+            },
+        }
+
+    monkeypatch.setattr(
+        client,
+        "_call_tool_once",
+        fake_call_tool_once,
+    )
+
+    result = asyncio.run(
+        client.scrape(
+            "https://example.com"
+        )
+    )
+
+    assert json.loads(result) == {
+        "title": "Example Domain",
+    }
+
+
+def test_scrape_validates_input_before_remote_call(
+    monkeypatch,
+) -> None:
+    """Blank and unsupported scraper URLs must stop locally."""
+    client = BrightDataRemoteMCPClient()
+
+    async def forbidden_call(*args, **kwargs):
+        raise AssertionError(
+            "MCP must not run for invalid scraper input."
+        )
+
+    monkeypatch.setattr(
+        client,
+        "_call_tool_once",
+        forbidden_call,
+    )
+
+    assert asyncio.run(
+        client.scrape("   ")
+    ) is None
+
+    with pytest.raises(
+        ValueError,
+        match="must start with http:// or https://",
+    ):
+        asyncio.run(
+            client.scrape(
+                "ftp://example.com"
+            )
+        )
+
+
+def test_scrape_returns_none_for_remote_error(
+    monkeypatch,
+) -> None:
+    """Remote MCP scraper errors must return None."""
+    client = BrightDataRemoteMCPClient()
+
+    async def fake_call_tool_once(
+        tool_name,
+        arguments,
+    ):
+        return {
+            "is_error": True,
+            "text": "",
+            "structured_content": None,
+        }
+
+    monkeypatch.setattr(
+        client,
+        "_call_tool_once",
+        fake_call_tool_once,
+    )
+
+    assert asyncio.run(
+        client.scrape(
+            "https://example.com"
+        )
+    ) is None
