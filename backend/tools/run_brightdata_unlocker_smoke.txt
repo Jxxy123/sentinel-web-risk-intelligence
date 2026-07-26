@@ -1,0 +1,4 @@
+Controlled Bright Data Web Unlocker smoke run: 001
+Expected live requests: 1
+Target: Bright Data official test endpoint
+Reason: verify sentinel_unlocker direct API connectivity
