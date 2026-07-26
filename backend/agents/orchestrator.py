@@ -698,10 +698,12 @@ class SentinelOrchestrator:
                 search_results,
                 mcp_results,
             )
-            _append_tool_once(
-                tools_used,
-                "Remote MCP search_engine",
-            )
+
+            if mcp_results:
+                _append_tool_once(
+                    tools_used,
+                    "Remote MCP search_engine",
+                )
 
             print(
                 "[REMOTE MCP] "
