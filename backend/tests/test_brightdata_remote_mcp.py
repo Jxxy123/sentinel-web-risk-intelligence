@@ -10,6 +10,25 @@ import core.brightdata_remote_mcp as remote_mcp_module
 from core.brightdata_remote_mcp import BrightDataRemoteMCPClient
 
 
+TEST_MCP_ENDPOINT = "https://example.invalid/mcp?token=hidden"
+
+
+def _mock_mcp_settings(monkeypatch) -> None:
+    """
+    Replace the module-level Pydantic settings object with a safe test double.
+
+    Pydantic settings methods cannot be monkeypatched directly on the model
+    instance because they are not model fields.
+    """
+    monkeypatch.setattr(
+        remote_mcp_module,
+        "settings",
+        SimpleNamespace(
+            build_bright_data_mcp_url=lambda: TEST_MCP_ENDPOINT,
+        ),
+    )
+
+
 def test_connect_initializes_and_closes_mcp_session(
     monkeypatch,
 ) -> None:
@@ -19,7 +38,7 @@ def test_connect_initializes_and_closes_mcp_session(
     @asynccontextmanager
     async def fake_streamable_http_client(endpoint):
         events.append("transport_opened")
-        assert endpoint == "https://example.invalid/mcp?token=hidden"
+        assert endpoint == TEST_MCP_ENDPOINT
 
         yield (
             "fake-read-stream",
@@ -54,11 +73,8 @@ def test_connect_initializes_and_closes_mcp_session(
         async def initialize(self) -> None:
             events.append("session_initialized")
 
-    monkeypatch.setattr(
-        remote_mcp_module.settings,
-        "build_bright_data_mcp_url",
-        lambda: "https://example.invalid/mcp?token=hidden",
-    )
+    _mock_mcp_settings(monkeypatch)
+
     monkeypatch.setattr(
         remote_mcp_module,
         "streamable_http_client",
@@ -76,11 +92,9 @@ def test_connect_initializes_and_closes_mcp_session(
         assert client.is_connected is False
 
         await client.connect()
-
         assert client.is_connected is True
 
         await client.close()
-
         assert client.is_connected is False
 
     asyncio.run(exercise_client())
@@ -105,6 +119,8 @@ def test_connect_is_idempotent(
     @asynccontextmanager
     async def fake_streamable_http_client(endpoint):
         nonlocal connection_count
+
+        assert endpoint == TEST_MCP_ENDPOINT
         connection_count += 1
 
         yield (
@@ -119,7 +135,8 @@ def test_connect_is_idempotent(
             read_stream,
             write_stream,
         ) -> None:
-            pass
+            assert read_stream == "read-stream"
+            assert write_stream == "write-stream"
 
         async def __aenter__(self):
             return self
@@ -136,11 +153,8 @@ def test_connect_is_idempotent(
             nonlocal initialization_count
             initialization_count += 1
 
-    monkeypatch.setattr(
-        remote_mcp_module.settings,
-        "build_bright_data_mcp_url",
-        lambda: "https://example.invalid/mcp?token=hidden",
-    )
+    _mock_mcp_settings(monkeypatch)
+
     monkeypatch.setattr(
         remote_mcp_module,
         "streamable_http_client",
@@ -163,6 +177,7 @@ def test_connect_is_idempotent(
 
     assert connection_count == 1
     assert initialization_count == 1
+    assert client.is_connected is False
 
 
 def test_list_tools_returns_serializable_metadata() -> None:
