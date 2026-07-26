@@ -31,25 +31,25 @@ class BrightDataSERPClient:
     local parser.
     """
 
-def __init__(self) -> None:
-    self.api_key = settings.bright_data_api_key
-    self.base_url = settings.bright_data_serp_api_url
+    def __init__(self) -> None:
+        self.api_key = settings.bright_data_api_key
+        self.base_url = settings.bright_data_serp_api_url
 
-    # Retained as a public attribute for compatibility with existing
-    # tests and integrations that safely override test credentials.
-    self.headers: Dict[str, str] = {
-        "Authorization": f"Bearer {self.api_key}",
-        "Content-Type": "application/json",
-    }
+        # Retained as a public attribute for compatibility with existing
+        # tests and integrations that safely override test credentials.
+        self.headers: Dict[str, str] = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
 
-def _build_headers(self) -> Dict[str, str]:
-    """
-    Return a copy of the configured request headers.
+    def _build_headers(self) -> Dict[str, str]:
+        """
+        Return a copy of the configured request headers.
 
-    Returning a copy prevents callers from accidentally changing the
-    client's stored header dictionary during a request.
-    """
-    return dict(self.headers)
+        Returning a copy prevents callers from accidentally changing the
+        client's stored header dictionary during a request.
+        """
+        return dict(self.headers)
 
     async def search(
         self,
@@ -73,7 +73,10 @@ def _build_headers(self) -> Dict[str, str]:
             return []
 
         if not self.base_url:
-            print("[SERP CONFIG ERROR] BRIGHT_DATA_SERP_API_URL is missing.")
+            print(
+                "[SERP CONFIG ERROR] "
+                "BRIGHT_DATA_SERP_API_URL is missing."
+            )
             return []
 
         result_limit = min(num_results, MAX_SERP_RESULTS)
@@ -375,9 +378,7 @@ class BrightDataProxyClient:
         self,
         proxy_type: ProxyType,
     ) -> Optional[str]:
-        """
-        Build a safely encoded authenticated Bright Data proxy URL.
-        """
+        """Build a safely encoded authenticated Bright Data proxy URL."""
         username, password = settings.get_proxy_credentials(
             proxy_type
         )
