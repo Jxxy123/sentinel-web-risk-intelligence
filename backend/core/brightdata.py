@@ -31,16 +31,25 @@ class BrightDataSERPClient:
     local parser.
     """
 
-    def __init__(self) -> None:
-        self.api_key = settings.bright_data_api_key
-        self.base_url = settings.bright_data_serp_api_url
+def __init__(self) -> None:
+    self.api_key = settings.bright_data_api_key
+    self.base_url = settings.bright_data_serp_api_url
 
-    def _build_headers(self) -> Dict[str, str]:
-        """Build authorization headers without logging sensitive values."""
-        return {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
+    # Retained as a public attribute for compatibility with existing
+    # tests and integrations that safely override test credentials.
+    self.headers: Dict[str, str] = {
+        "Authorization": f"Bearer {self.api_key}",
+        "Content-Type": "application/json",
+    }
+
+def _build_headers(self) -> Dict[str, str]:
+    """
+    Return a copy of the configured request headers.
+
+    Returning a copy prevents callers from accidentally changing the
+    client's stored header dictionary during a request.
+    """
+    return dict(self.headers)
 
     async def search(
         self,
