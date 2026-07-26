@@ -1,0 +1,4 @@
+Controlled Bright Data Data Center Proxy smoke run: 001
+Expected proxy requests: 1
+Target: Bright Data official proxy test endpoint
+Reason: verify rotated data_center proxy credentials
