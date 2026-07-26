@@ -336,7 +336,7 @@ class Settings(BaseSettings):
 
         return (
             f"{base_url}{separator}"
-            f"{urlencode(parameters)}"
+            f"{urlencode(parameters, safe=',')}"
         )
 
     def get_proxy_credentials(
