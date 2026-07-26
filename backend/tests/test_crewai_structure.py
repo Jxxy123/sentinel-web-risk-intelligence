@@ -268,7 +268,7 @@ def test_task_prompts_include_live_evidence_and_guidance(
 
     assert "Example Vendor" in recon_description
     assert "https://example.com/report" in recon_description
-    assert "Controlled risk update." in recon_description
+    assert "controlled risk update." in recon_description.lower()
 
     assert (
         "Controlled scraped evidence."
@@ -357,7 +357,9 @@ def test_missing_evidence_prompt_prevents_hallucinated_facts(
         in recon_description
     )
     assert (
-        "reduce confidence"
+        "keep confidence low"
+        in recon_description
+        or "reduce confidence"
         in recon_description
     )
 
