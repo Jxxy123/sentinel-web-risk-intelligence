@@ -1,0 +1,20 @@
+Controlled vendor identity live smoke test.
+
+Vendor input: ABC Trading
+
+Expected external activity:
+- Bright Data SERP searches: 2
+- Bright Data Remote MCP search_engine calls: 1
+- Page scrapes: 0
+- CrewAI/LLM calls: 0
+- Risk-scoring calls: 0
+- Database writes: 0
+- Investigation jobs: 0
+
+Accepted safe outcomes:
+- CONFIRMED
+- SELECTION_REQUIRED
+- MORE_INFORMATION_REQUIRED
+
+The test must not force a company match when accessible public identity
+evidence is ambiguous or insufficient.
