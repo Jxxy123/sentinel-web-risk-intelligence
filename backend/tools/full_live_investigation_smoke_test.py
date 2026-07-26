@@ -21,6 +21,9 @@ from urllib.parse import urlparse
 
 from agents.orchestrator import SentinelOrchestrator
 from core.config import settings
+from core.report_contract import (
+    validate_calibrated_report_contract,
+)
 
 
 TEST_VENDOR = "Microsoft"
@@ -556,6 +559,16 @@ def validate_report(
     _validate_source_records(
         report.get("sources")
     )
+
+    try:
+        validate_calibrated_report_contract(
+            report
+        )
+    except ValueError as error:
+        raise SystemExit(
+            "Calibrated report contract failed: "
+            + str(error)
+        ) from error
 
     raw_intelligence = report.get(
         "raw_intelligence"
