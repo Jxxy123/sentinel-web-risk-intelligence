@@ -5,6 +5,7 @@ Provides a genuine Model Context Protocol connection to Bright Data's
 managed Streamable HTTP MCP server.
 """
 
+import ast
 import json
 import re
 from contextlib import AsyncExitStack
@@ -19,6 +20,7 @@ from core.config import settings
 SearchResult = dict[str, str]
 
 MAX_MCP_SEARCH_RESULTS = 20
+MAX_MCP_TEXT_PARSE_CHARACTERS = 100_000
 
 
 class BrightDataRemoteMCPClient:
@@ -297,27 +299,157 @@ class BrightDataRemoteMCPClient:
         return []
 
     @staticmethod
+    def _strip_code_fences(
+        text: str,
+    ) -> str:
+        """Remove common Markdown code fences from serialized output."""
+        normalized_text = text.strip()
+
+        if normalized_text.startswith("```"):
+            normalized_text = re.sub(
+                r"^```(?:json|JSON|python|Python)?\\s*",
+                "",
+                normalized_text,
+            )
+            normalized_text = re.sub(
+                r"\\s*```$",
+                "",
+                normalized_text,
+            )
+
+        return normalized_text.strip()
+
+    @staticmethod
+    def _extract_balanced_mapping(
+        text: str,
+    ) -> Optional[str]:
+        """
+        Extract the first balanced dictionary literal from wrapped MCP text.
+
+        The scanner respects quoted strings and escape sequences, preventing
+        braces inside titles, descriptions, or URLs from ending the mapping
+        prematurely.
+        """
+        start = text.find("{")
+
+        if start < 0:
+            return None
+
+        depth = 0
+        quote_character: Optional[str] = None
+        escaped = False
+
+        for index in range(start, len(text)):
+            character = text[index]
+
+            if quote_character is not None:
+                if escaped:
+                    escaped = False
+                    continue
+
+                if character == "\\":
+                    escaped = True
+                    continue
+
+                if character == quote_character:
+                    quote_character = None
+
+                continue
+
+            if character in {"'", '"'}:
+                quote_character = character
+                continue
+
+            if character == "{":
+                depth += 1
+                continue
+
+            if character == "}":
+                depth -= 1
+
+                if depth == 0:
+                    return text[start:index + 1]
+
+                if depth < 0:
+                    return None
+
+        return None
+
+    @classmethod
     def _parse_json_text(
+        cls,
         text: str,
     ) -> Any:
-        """Parse JSON text, including fenced JSON responses."""
-        normalized_text = text.strip()
+        """
+        Parse JSON or a safe Python literal from wrapped MCP search output.
+
+        Bright Data may wrap search data in an untrusted-content notice and
+        serialize the payload with single quotes. ``ast.literal_eval`` accepts
+        only Python literals and never executes functions or instructions.
+        """
+        normalized_text = cls._strip_code_fences(
+            text
+        )
 
         if not normalized_text:
             return None
 
-        normalized_text = (
+        if (
+            len(normalized_text)
+            > MAX_MCP_TEXT_PARSE_CHARACTERS
+        ):
+            return None
+
+        candidates = [
+            normalized_text,
+        ]
+
+        extracted_mapping = cls._extract_balanced_mapping(
             normalized_text
-            .replace("```json", "")
-            .replace("```JSON", "")
-            .replace("```", "")
-            .strip()
         )
 
-        try:
-            return json.loads(normalized_text)
-        except json.JSONDecodeError:
-            return None
+        if (
+            extracted_mapping
+            and extracted_mapping != normalized_text
+        ):
+            candidates.append(
+                extracted_mapping
+            )
+
+        for candidate in candidates:
+            try:
+                parsed_json = json.loads(
+                    candidate
+                )
+            except json.JSONDecodeError:
+                parsed_json = None
+
+            if isinstance(
+                parsed_json,
+                (dict, list),
+            ):
+                return parsed_json
+
+            try:
+                parsed_literal = ast.literal_eval(
+                    candidate
+                )
+            except (
+                SyntaxError,
+                ValueError,
+                TypeError,
+                MemoryError,
+                RecursionError,
+            ):
+                parsed_literal = None
+
+            if isinstance(
+                parsed_literal,
+                (dict, list),
+            ):
+                return parsed_literal
+
+        return None
 
     @staticmethod
     def _clean_text(value: Any) -> str:
