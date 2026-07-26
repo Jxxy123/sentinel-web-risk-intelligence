@@ -1,0 +1,6 @@
+Controlled Bright Data MCP search run: 001
+Expected MCP sessions: 1
+Expected search_engine calls: 1
+Expected scrape_as_markdown calls: 0
+Expected direct SERP calls: 0
+Reason: verify genuine Remote MCP search functionality
