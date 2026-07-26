@@ -47,6 +47,10 @@ def test_mcp_url_contains_expected_configuration(
     )
 
     generated_url = settings.build_bright_data_mcp_url()
+    assert (
+        "tools=search_engine,scrape_as_markdown,session_stats"
+        in generated_url
+    )
     parsed_url = urlparse(generated_url)
     parameters = parse_qs(parsed_url.query)
 
