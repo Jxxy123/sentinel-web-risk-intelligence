@@ -63,6 +63,12 @@ async def run_smoke_test() -> None:
         }
     )
 
+    print("Discovered MCP tools:")
+
+    for tool_name in tool_names:
+      
+        print(f"- {tool_name}")
+    
     missing_tools = sorted(
         REQUIRED_TOOLS.difference(tool_names)
     )
