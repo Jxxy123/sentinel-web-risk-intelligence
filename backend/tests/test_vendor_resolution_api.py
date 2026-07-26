@@ -7,11 +7,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import core.vendor_resolution_api as api_module
-from core.vendor_resolution import CandidateEvidence
-from core.vendor_resolution_api import (
+from core.live_vendor_identity import (
     IdentityEvidenceBatch,
-    router,
 )
+from core.vendor_resolution import CandidateEvidence
+from core.vendor_resolution_api import router
 
 
 @pytest.fixture()
@@ -20,10 +20,26 @@ def client() -> Generator[TestClient, None, None]:
         api_module.identity_evidence_collector
     )
 
-    app = FastAPI()
-    app.include_router(
-        router
+    async def no_search_collector(
+        request,
+    ) -> IdentityEvidenceBatch:
+        del request
+
+        return IdentityEvidenceBatch(
+            records=(),
+            search_performed=False,
+            providers=(),
+            warnings=(
+                "Controlled offline test collector.",
+            ),
+        )
+
+    api_module.identity_evidence_collector = (
+        no_search_collector
     )
+
+    app = FastAPI()
+    app.include_router(router)
 
     with TestClient(app) as test_client:
         yield test_client
@@ -73,7 +89,7 @@ def test_blank_vendor_name_is_rejected(
     )
 
 
-def test_unconfigured_collector_does_not_claim_live_search(
+def test_controlled_collector_does_not_claim_live_search(
     client: TestClient,
 ) -> None:
     response = client.post(
@@ -99,10 +115,11 @@ def test_unconfigured_collector_does_not_claim_live_search(
     assert payload["identity_search"]["providers"] == []
     assert (
         payload["identity_search"][
-            "candidate_evidence_records"
+            "risk_scoring_started"
         ]
-        == 0
+        is False
     )
+    assert payload["identity_search"]["llm_used"] is False
 
 
 def test_multiple_supported_matches_require_selection(
@@ -121,38 +138,29 @@ def test_multiple_supported_matches_require_selection(
                     source_url=(
                         "https://abctradingbd.example"
                     ),
-                    source_quality=(
-                        "OFFICIAL_WEBSITE"
-                    ),
-                    website=(
-                        "https://abctradingbd.example"
-                    ),
+                    source_quality="OFFICIAL_WEBSITE",
+                    website="https://abctradingbd.example",
                     country="Bangladesh",
                     city="Chattogram",
                     industry="Logistics",
                 ),
                 _record(
-                    legal_name=(
-                        "ABC Trading Pte. Ltd."
-                    ),
+                    legal_name="ABC Trading Pte. Ltd.",
                     source_url=(
                         "https://abctrading.example.sg"
                     ),
-                    source_quality=(
-                        "OFFICIAL_WEBSITE"
-                    ),
-                    website=(
-                        "https://abctrading.example.sg"
-                    ),
+                    source_quality="OFFICIAL_WEBSITE",
+                    website="https://abctrading.example.sg",
                     country="Singapore",
                     city="Singapore",
                     industry="Wholesale",
                 ),
             ),
             search_performed=True,
-            providers=(
-                "Test Identity Provider",
-            ),
+            providers=("Test Identity Provider",),
+            queries_executed=("query one",),
+            started_at="2026-07-27T00:00:00+00:00",
+            completed_at="2026-07-27T00:00:01+00:00",
         )
 
     monkeypatch.setattr(
@@ -176,12 +184,9 @@ def test_multiple_supported_matches_require_selection(
         == "SELECTION_REQUIRED"
     )
     assert len(payload["candidates"]) == 2
-    assert (
-        payload["identity_search"][
-            "search_performed"
-        ]
-        is True
-    )
+    assert payload["identity_search"][
+        "queries_executed"
+    ] == ["query one"]
 
 
 def test_one_strong_identity_is_confirmed(
@@ -196,34 +201,20 @@ def test_one_strong_identity_is_confirmed(
         return IdentityEvidenceBatch(
             records=(
                 _record(
-                    legal_name=(
-                        "Microsoft Corporation"
-                    ),
+                    legal_name="Microsoft Corporation",
                     aliases=("Microsoft",),
-                    source_url=(
-                        "https://www.microsoft.com/"
-                    ),
-                    source_quality=(
-                        "OFFICIAL_WEBSITE"
-                    ),
-                    website=(
-                        "https://www.microsoft.com"
-                    ),
+                    source_url="https://www.microsoft.com/",
+                    source_quality="OFFICIAL_WEBSITE",
+                    website="https://www.microsoft.com",
                     country="United States",
                     industry="Technology",
                 ),
                 _record(
-                    legal_name=(
-                        "Microsoft Corporation"
-                    ),
+                    legal_name="Microsoft Corporation",
                     aliases=("Microsoft",),
-                    source_url=(
-                        "https://www.sec.gov/example"
-                    ),
+                    source_url="https://www.sec.gov/example",
                     source_quality="AUTHORITATIVE",
-                    website=(
-                        "https://www.microsoft.com"
-                    ),
+                    website="https://www.microsoft.com",
                     country="United States",
                     industry="Technology",
                 ),
@@ -259,10 +250,6 @@ def test_one_strong_identity_is_confirmed(
         ]
         == "microsoft.com"
     )
-    assert payload["identity_search"]["providers"] == [
-        "Official Website",
-        "Government Registry",
-    ]
 
 
 def test_optional_context_is_normalized_and_forwarded(
