@@ -1,0 +1,95 @@
+name: Controlled Live CrewAI Smoke Test
+
+on:
+  push:
+    branches:
+      - testing/enterprise-readiness
+    paths:
+      - backend/tools/run_crewai_live_smoke.txt
+
+permissions:
+  contents: read
+
+concurrency:
+  group: controlled-live-crewai-smoke
+  cancel-in-progress: false
+
+jobs:
+  live-crewai-smoke:
+    name: One Agent and One Task
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || 'https://api.aimlapi.com/v1' }}
+      FREE_TIER_MODEL: ${{ vars.FREE_TIER_MODEL || 'meta-llama/Llama-3.3-70B-Instruct-Turbo' }}
+      EXECUTION_MODE: real
+      PYTHONPATH: .
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify protected AI configuration
+        run: |
+          python - <<'PY'
+          import os
+          from urllib.parse import urlparse
+
+          api_key = os.getenv("OPENAI_API_KEY", "").strip()
+          base_url = os.getenv("OPENAI_BASE_URL", "").strip()
+          model = os.getenv("FREE_TIER_MODEL", "").strip()
+
+          missing = []
+
+          if not api_key:
+              missing.append("OPENAI_API_KEY")
+
+          if not base_url:
+              missing.append("OPENAI_BASE_URL")
+
+          if not model:
+              missing.append("FREE_TIER_MODEL")
+
+          if missing:
+              raise SystemExit(
+                  "Missing protected AI configuration: "
+                  + ", ".join(missing)
+              )
+
+          parsed_url = urlparse(base_url)
+
+          if (
+              parsed_url.scheme not in {"http", "https"}
+              or not parsed_url.netloc
+          ):
+              raise SystemExit("OPENAI_BASE_URL is invalid.")
+
+          print("AI provider configuration is present.")
+          print("API key: protected and present")
+          print(f"Provider host: {parsed_url.netloc}")
+          print(f"Configured model: {model}")
+          print("Planned CrewAI agents: 1")
+          print("Planned CrewAI tasks: 1")
+          print("Planned Bright Data calls: 0")
+          PY
+
+      - name: Run controlled live CrewAI smoke test
+        run: python tools/crewai_live_smoke_test.py
