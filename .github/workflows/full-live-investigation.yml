@@ -5,7 +5,7 @@ on:
     branches:
       - testing/enterprise-readiness
     paths:
-      - backend/tools/run_full_live_investigation.txt
+      - backend/tools/run_full_live_investigation_*.txt
 
 permissions:
   contents: read
@@ -75,79 +75,120 @@ jobs:
           python - <<'PY'
           import os
 
-          required_secrets = [
+          required = [
               "OPENAI_API_KEY",
-              "BRIGHT_DATA_API_KEY",
-              "BRIGHT_DATA_PROXY_USER",
-              "BRIGHT_DATA_PROXY_PASS",
-          ]
-
-          required_variables = [
               "OPENAI_BASE_URL",
               "FREE_TIER_MODEL",
+              "BRIGHT_DATA_API_KEY",
               "BRIGHT_DATA_SERP_ZONE",
-              "BRIGHT_DATA_WEB_UNLOCKER_ZONE",
-              "BRIGHT_DATA_MCP_BASE_URL",
-              "BRIGHT_DATA_MCP_TOOLS",
-              "BRIGHT_DATA_PROXY_HOST",
-              "BRIGHT_DATA_PROXY_PORT",
+              "BRIGHT_DATA_SERP_API_URL",
           ]
 
           missing = [
               name
-              for name in (
-                  required_secrets
-                  + required_variables
-              )
+              for name in required
               if not os.getenv(name, "").strip()
           ]
 
           if missing:
               raise SystemExit(
-                  "Missing protected full-investigation "
-                  "configuration: "
+                  "Missing core full-investigation configuration: "
                   + ", ".join(missing)
               )
 
-          tools = {
+          mcp_tools = {
               tool.strip()
-              for tool in os.environ[
-                  "BRIGHT_DATA_MCP_TOOLS"
-              ].split(",")
+              for tool in os.getenv(
+                  "BRIGHT_DATA_MCP_TOOLS",
+                  "",
+              ).split(",")
               if tool.strip()
           }
 
-          if "search_engine" not in tools:
-              raise SystemExit(
-                  "search_engine is missing from "
-                  "BRIGHT_DATA_MCP_TOOLS."
-              )
+          mcp_ready = bool(
+              os.getenv(
+                  "BRIGHT_DATA_MCP_BASE_URL",
+                  "",
+              ).strip()
+              and "search_engine" in mcp_tools
+          )
+
+          unlocker_ready = bool(
+              os.getenv(
+                  "BRIGHT_DATA_WEB_UNLOCKER_ZONE",
+                  "",
+              ).strip()
+              and os.getenv(
+                  "BRIGHT_DATA_WEB_UNLOCKER_URL",
+                  "",
+              ).strip()
+          )
+
+          data_center_proxy_ready = bool(
+              os.getenv(
+                  "BRIGHT_DATA_PROXY_USER",
+                  "",
+              ).strip()
+              and os.getenv(
+                  "BRIGHT_DATA_PROXY_PASS",
+                  "",
+              ).strip()
+          )
+
+          isp_proxy_ready = bool(
+              os.getenv(
+                  "BRIGHT_DATA_ISP_PROXY_USER",
+                  "",
+              ).strip()
+              and os.getenv(
+                  "BRIGHT_DATA_ISP_PROXY_PASS",
+                  "",
+              ).strip()
+          )
 
           print(
-              "Protected full-investigation "
+              "Protected core full-investigation "
               "configuration is present."
           )
           print("AI key: protected and present")
           print("Bright Data API key: protected and present")
-          print("Data Center proxy credentials: present")
+          print("SERP configuration: present")
           print(
-              "ISP fallback credentials: "
+              "Remote MCP optional path: "
               + (
-                  "present"
-                  if (
-                      os.getenv(
-                          "BRIGHT_DATA_ISP_PROXY_USER",
-                          "",
-                      ).strip()
-                      and os.getenv(
-                          "BRIGHT_DATA_ISP_PROXY_PASS",
-                          "",
-                      ).strip()
-                  )
-                  else "not configured; fallback will be skipped"
+                  "configured"
+                  if mcp_ready
+                  else "not fully configured"
+              )
+          )
+          print(
+              "Web Unlocker optional path: "
+              + (
+                  "configured"
+                  if unlocker_ready
+                  else "not fully configured"
+              )
+          )
+          print(
+              "Data Center proxy optional path: "
+              + (
+                  "configured"
+                  if data_center_proxy_ready
+                  else "not configured"
+              )
+          )
+          print(
+              "ISP proxy fallback: "
+              + (
+                  "configured"
+                  if isp_proxy_ready
+                  else "not configured"
               )
           )
           print("Planned investigations: 1")
+          print("Planned direct SERP requests: 4")
+          print("Planned Remote MCP searches: up to 1")
+          print("Planned Web Unlocker requests: up to 1")
           print("Planned CrewAI agents: 6")
           print("Planned CrewAI tasks: 6")
           PY
@@ -159,7 +200,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: controlled-live-investigation-report
+          name: controlled-live-investigation-report-${{ github.run_number }}
           path: backend/artifacts/controlled_live_investigation.json
           if-no-files-found: ignore
           retention-days: 7
