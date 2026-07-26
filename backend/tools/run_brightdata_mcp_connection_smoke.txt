@@ -1,4 +1,4 @@
-Controlled Bright Data Remote MCP connection run: 001
+Controlled Bright Data Remote MCP connection run: 002
 Expected MCP sessions: 1
 Expected MCP web-data tool calls: 0
-Reason: verify authentication, initialization, and tool discovery
+Reason: verify corrected comma-separated MCP tool selection
