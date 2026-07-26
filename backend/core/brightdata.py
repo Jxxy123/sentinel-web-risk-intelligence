@@ -6,16 +6,20 @@ All live web-intelligence access flows through this module.
 
 import asyncio
 from typing import Dict, List, Optional
-from urllib.parse import quote_plus
+from urllib.parse import quote, quote_plus
 
 import httpx
 
-from core.config import settings
+from core.config import ProxyType, settings
 from core.serp_parser import parse_google_serp_html
 
 
 SearchResult = Dict[str, str]
+
 MAX_SERP_RESULTS = 20
+SERP_TIMEOUT_SECONDS = 45
+WEB_UNLOCKER_TIMEOUT_SECONDS = 45
+PROXY_TIMEOUT_SECONDS = 30
 
 
 class BrightDataSERPClient:
@@ -27,11 +31,13 @@ class BrightDataSERPClient:
     local parser.
     """
 
-    BASE_URL = "https://api.brightdata.com/request"
-
     def __init__(self) -> None:
         self.api_key = settings.bright_data_api_key
-        self.headers = {
+        self.base_url = settings.bright_data_serp_api_url
+
+    def _build_headers(self) -> Dict[str, str]:
+        """Build authorization headers without logging sensitive values."""
+        return {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
@@ -44,6 +50,7 @@ class BrightDataSERPClient:
     ) -> List[SearchResult]:
         """Search the live web and return structured organic results."""
         normalized_query = query.strip()
+        normalized_language = lang.strip().lower() or "en"
 
         if not normalized_query or num_results <= 0:
             return []
@@ -56,6 +63,10 @@ class BrightDataSERPClient:
             print("[SERP CONFIG ERROR] BRIGHT_DATA_SERP_ZONE is missing.")
             return []
 
+        if not self.base_url:
+            print("[SERP CONFIG ERROR] BRIGHT_DATA_SERP_API_URL is missing.")
+            return []
+
         result_limit = min(num_results, MAX_SERP_RESULTS)
         encoded_query = quote_plus(normalized_query)
 
@@ -63,17 +74,21 @@ class BrightDataSERPClient:
             "zone": settings.bright_data_serp_zone,
             "url": (
                 "https://www.google.com/search"
-                f"?q={encoded_query}&hl={lang}&num={result_limit}"
+                f"?q={encoded_query}"
+                f"&hl={normalized_language}"
+                f"&num={result_limit}"
             ),
             "format": "raw",
             "data_format": "html",
         }
 
         try:
-            async with httpx.AsyncClient(timeout=45) as client:
+            async with httpx.AsyncClient(
+                timeout=SERP_TIMEOUT_SECONDS,
+            ) as client:
                 response = await client.post(
-                    self.BASE_URL,
-                    headers=self.headers,
+                    self.base_url,
+                    headers=self._build_headers(),
                     json=payload,
                 )
 
@@ -86,14 +101,14 @@ class BrightDataSERPClient:
 
             if results:
                 print(
-                    f"[SERP] query='{normalized_query[:50]}' "
-                    f"→ {len(results)} structured results"
+                    f"[SERP SUCCESS] query='{normalized_query[:50]}' "
+                    f"results={len(results)}"
                 )
             else:
                 print(
                     f"[SERP PARSER WARN] query='{normalized_query[:50]}' "
-                    "→ Bright Data returned HTML, but no structured "
-                    "organic results were extracted"
+                    "Bright Data returned HTML, but no structured "
+                    "organic results were extracted."
                 )
 
             return results
@@ -108,14 +123,14 @@ class BrightDataSERPClient:
         except httpx.RequestError as error:
             print(
                 "[SERP NETWORK ERROR] "
-                f"{type(error).__name__}"
+                f"error={type(error).__name__}"
             )
             return []
 
         except Exception as error:
             print(
                 "[SERP PARSER ERROR] "
-                f"{type(error).__name__}: {error}"
+                f"error={type(error).__name__}: {error}"
             )
             return []
 
@@ -135,11 +150,7 @@ class BrightDataSERPClient:
         if not normalized_vendor:
             return []
 
-        compact_vendor = (
-            normalized_vendor
-            .lower()
-            .replace(" ", "")
-        )
+        compact_vendor = normalized_vendor.lower().replace(" ", "")
 
         if "." in compact_vendor:
             target_domain = compact_vendor
@@ -183,7 +194,7 @@ class BrightDataSERPClient:
                     f"{result.get('title', '')} "
                     f"{result.get('snippet', '')}"
                 ).lower()
-                result_url = result.get("url", "")
+                result_url = result.get("url", "").strip()
 
                 if (
                     vendor_lower in combined_text
@@ -213,11 +224,31 @@ class BrightDataWebUnlocker:
         url: str,
         render_js: bool = True,
     ) -> Optional[str]:
-        """Fetch a URL through Bright Data Web Unlocker."""
+        """Fetch one URL through Bright Data Web Unlocker."""
+        normalized_url = url.strip()
+
+        if not normalized_url:
+            print("[WEB UNLOCKER INPUT ERROR] URL is empty.")
+            return None
+
         if not self.api_key:
             print(
                 "[WEB UNLOCKER CONFIG ERROR] "
                 "BRIGHT_DATA_API_KEY is missing."
+            )
+            return None
+
+        if not settings.bright_data_web_unlocker_zone:
+            print(
+                "[WEB UNLOCKER CONFIG ERROR] "
+                "BRIGHT_DATA_WEB_UNLOCKER_ZONE is missing."
+            )
+            return None
+
+        if not self.base_url:
+            print(
+                "[WEB UNLOCKER CONFIG ERROR] "
+                "BRIGHT_DATA_WEB_UNLOCKER_URL is missing."
             )
             return None
 
@@ -227,7 +258,7 @@ class BrightDataWebUnlocker:
         }
         payload = {
             "zone": settings.bright_data_web_unlocker_zone,
-            "url": url,
+            "url": normalized_url,
             "format": "raw",
         }
 
@@ -235,7 +266,9 @@ class BrightDataWebUnlocker:
             payload["render"] = "html"
 
         try:
-            async with httpx.AsyncClient(timeout=45) as client:
+            async with httpx.AsyncClient(
+                timeout=WEB_UNLOCKER_TIMEOUT_SECONDS,
+            ) as client:
                 response = await client.post(
                     self.base_url,
                     headers=headers,
@@ -243,26 +276,35 @@ class BrightDataWebUnlocker:
                 )
 
             response.raise_for_status()
+
+            print(
+                "[WEB UNLOCKER SUCCESS] "
+                f"status={response.status_code}; "
+                f"characters={len(response.text)}"
+            )
             return response.text
 
         except httpx.HTTPStatusError as error:
             print(
                 "[WEB UNLOCKER HTTP ERROR] "
-                f"status={error.response.status_code}; url={url}"
+                f"status={error.response.status_code}; "
+                f"url={normalized_url}"
             )
             return None
 
         except httpx.RequestError as error:
             print(
                 "[WEB UNLOCKER NETWORK ERROR] "
-                f"{type(error).__name__}; url={url}"
+                f"error={type(error).__name__}; "
+                f"url={normalized_url}"
             )
             return None
 
         except Exception as error:
             print(
                 "[WEB UNLOCKER ERROR] "
-                f"{type(error).__name__}: {error}; url={url}"
+                f"error={type(error).__name__}: {error}; "
+                f"url={normalized_url}"
             )
             return None
 
@@ -271,7 +313,12 @@ class BrightDataWebUnlocker:
         company_name: str,
     ) -> Optional[str]:
         """Attempt to fetch public SEC company filings."""
-        encoded_company = quote_plus(company_name.strip())
+        normalized_company = company_name.strip()
+
+        if not normalized_company:
+            return None
+
+        encoded_company = quote_plus(normalized_company)
         url = (
             "https://www.sec.gov/cgi-bin/browse-edgar"
             f"?company={encoded_company}&action=getcompany"
@@ -288,13 +335,52 @@ class BrightDataWebUnlocker:
 
 class BrightDataProxyClient:
     """
-    Bright Data Proxy Network client for regionally restricted resources.
+    Bright Data dual-proxy client.
+
+    Data Center is the default proxy route. ISP is available as an explicit
+    higher-trust route or as a fallback after Data Center failure.
     """
 
-    def __init__(self) -> None:
-        self.proxy_url = (
-            f"http://{settings.bright_data_proxy_user}:"
-            f"{settings.bright_data_proxy_pass}@"
+    def __init__(
+        self,
+        default_proxy_type: ProxyType = "data_center",
+    ) -> None:
+        self.default_proxy_type = self._validate_proxy_type(
+            default_proxy_type
+        )
+
+    @staticmethod
+    def _validate_proxy_type(proxy_type: str) -> ProxyType:
+        """Validate and normalize the selected proxy product."""
+        if proxy_type == "data_center":
+            return "data_center"
+
+        if proxy_type == "isp":
+            return "isp"
+
+        raise ValueError(
+            "proxy_type must be 'data_center' or 'isp'."
+        )
+
+    def _build_proxy_url(
+        self,
+        proxy_type: ProxyType,
+    ) -> Optional[str]:
+        """
+        Build a safely encoded authenticated Bright Data proxy URL.
+        """
+        username, password = settings.get_proxy_credentials(
+            proxy_type
+        )
+
+        if not username or not password:
+            return None
+
+        encoded_username = quote(username, safe="")
+        encoded_password = quote(password, safe="")
+
+        return (
+            f"http://{encoded_username}:{encoded_password}@"
             f"{settings.bright_data_proxy_host}:"
             f"{settings.bright_data_proxy_port}"
         )
@@ -303,43 +389,68 @@ class BrightDataProxyClient:
         self,
         url: str,
         country: str = "us",
+        proxy_type: Optional[ProxyType] = None,
     ) -> Optional[str]:
         """
-        Fetch a URL through the configured Bright Data proxy.
+        Fetch one URL using the selected Bright Data proxy product.
 
-        The country argument is retained for API compatibility. Country-level
-        routing must be configured in the proxy credentials or zone settings.
+        Existing Sentinel calls continue using Data Center by default.
+        ISP is used only when explicitly selected.
+
+        Country routing remains controlled by the Bright Data username or
+        zone configuration. The country argument is retained for compatibility
+        with the existing orchestrator.
         """
         _ = country
+        normalized_url = url.strip()
 
-        if (
-            not settings.bright_data_proxy_user
-            or not settings.bright_data_proxy_pass
-        ):
+        if not normalized_url:
+            print("[PROXY INPUT ERROR] URL is empty.")
+            return None
+
+        try:
+            selected_proxy = self._validate_proxy_type(
+                proxy_type or self.default_proxy_type
+            )
+        except ValueError as error:
+            print(f"[PROXY CONFIG ERROR] {error}")
+            return None
+
+        proxy_url = self._build_proxy_url(selected_proxy)
+
+        if not proxy_url:
             print(
-                "[PROXY CONFIG ERROR] Bright Data proxy credentials "
-                "are missing."
+                "[PROXY CONFIG ERROR] "
+                f"Missing {selected_proxy} proxy credentials."
             )
             return None
 
         proxies = {
-            "http://": self.proxy_url,
-            "https://": self.proxy_url,
+            "http://": proxy_url,
+            "https://": proxy_url,
         }
 
         try:
             async with httpx.AsyncClient(
                 proxies=proxies,
-                timeout=30,
+                timeout=PROXY_TIMEOUT_SECONDS,
             ) as client:
-                response = await client.get(url)
+                response = await client.get(normalized_url)
 
             response.raise_for_status()
+
+            print(
+                "[PROXY SUCCESS] "
+                f"type={selected_proxy}; "
+                f"status={response.status_code}; "
+                f"characters={len(response.text)}"
+            )
             return response.text
 
         except httpx.HTTPStatusError as error:
             print(
                 "[PROXY HTTP ERROR] "
+                f"type={selected_proxy}; "
                 f"status={error.response.status_code}"
             )
             return None
@@ -347,42 +458,84 @@ class BrightDataProxyClient:
         except httpx.RequestError as error:
             print(
                 "[PROXY NETWORK ERROR] "
-                f"{type(error).__name__}"
+                f"type={selected_proxy}; "
+                f"error={type(error).__name__}"
             )
             return None
 
         except Exception as error:
             print(
                 "[PROXY ERROR] "
-                f"{type(error).__name__}: {error}"
+                f"type={selected_proxy}; "
+                f"error={type(error).__name__}: {error}"
             )
             return None
+
+    async def fetch_with_fallback(
+        self,
+        url: str,
+        country: str = "us",
+    ) -> Optional[str]:
+        """
+        Try Data Center first and use ISP only when Data Center fails.
+
+        This method can make two paid proxy requests when Data Center fails.
+        """
+        data_center_result = await self.fetch_with_proxy(
+            url=url,
+            country=country,
+            proxy_type="data_center",
+        )
+
+        if data_center_result:
+            return data_center_result
+
+        if not settings.has_proxy_credentials("isp"):
+            print(
+                "[PROXY FALLBACK SKIPPED] "
+                "ISP credentials are not configured."
+            )
+            return None
+
+        print(
+            "[PROXY FALLBACK] "
+            "Data Center failed; attempting ISP."
+        )
+
+        return await self.fetch_with_proxy(
+            url=url,
+            country=country,
+            proxy_type="isp",
+        )
 
 
 class BrightDataMCPClient:
     """
-    MCP-style compatibility adapter for Sentinel agents.
+    Compatibility adapter for Sentinel's existing agent interface.
 
-    Search routes through the real SERP client. Scraping routes through
-    Web Unlocker. This class does not independently open a remote MCP session.
+    This class does not open a genuine remote MCP session. Search requests
+    route through the SERP client and scrape requests route through Web
+    Unlocker. It is retained temporarily so existing orchestrator imports do
+    not break while a genuine Bright Data MCP client is implemented.
     """
 
     MCP_TOOL_DESCRIPTIONS = {
-        "search_engine": "Search the live web for any query in real time",
+        "search_engine": "Search the live web through the SERP client",
         "scrape_as_markdown": (
-            "Scrape a URL and return content for downstream processing"
+            "Retrieve page content through Web Unlocker"
         ),
-        "web_data_feed": "Access configured structured web-data feeds",
     }
 
     def __init__(self) -> None:
         self.api_key = settings.bright_data_api_key
 
     def get_tools_config(self) -> Dict[str, object]:
-        """Return the Bright Data MCP-style tool configuration."""
+        """Describe this compatibility adapter without claiming remote MCP."""
         return {
+            "mode": "compatibility_adapter",
+            "remote_mcp_session": False,
             "mcp_url": "https://mcp.brightdata.com",
-            "api_key": self.api_key,
+            "api_key_configured": bool(self.api_key),
             "tools": list(self.MCP_TOOL_DESCRIPTIONS.keys()),
         }
 
@@ -390,12 +543,12 @@ class BrightDataMCPClient:
         self,
         query: str,
     ) -> List[SearchResult]:
-        """Route search through the SERP pipeline with traceability tags."""
+        """Route search through SERP with an accurate traceability tag."""
         serp = BrightDataSERPClient()
         results = await serp.search(query)
 
         for result in results:
-            result["source"] = "bright_data_mcp"
+            result["source"] = "bright_data_serp_adapter"
 
         return results
 
