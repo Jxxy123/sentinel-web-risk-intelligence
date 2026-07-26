@@ -6,6 +6,7 @@ automated testing, and production deployments.
 """
 
 from typing import Literal
+from urllib.parse import urlencode
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -59,8 +60,6 @@ class Settings(BaseSettings):
     # Provider execution mode
     # ------------------------------------------------------------------
 
-    # real = communicate with external services
-    # mock = use deterministic local providers during automated tests
     execution_mode: ExecutionMode = Field(
         default="real",
         validation_alias="EXECUTION_MODE",
@@ -85,7 +84,6 @@ class Settings(BaseSettings):
         validation_alias="OPENAI_MODEL",
     )
 
-    # Model currently used by the CrewAI orchestration layer.
     free_tier_model: str = Field(
         default="meta-llama/Llama-3.3-70B-Instruct-Turbo",
         validation_alias="FREE_TIER_MODEL",
@@ -100,7 +98,6 @@ class Settings(BaseSettings):
     # Bright Data shared API configuration
     # ------------------------------------------------------------------
 
-    # Shared API key used by SERP and Web Unlocker direct API requests.
     bright_data_api_key: str = Field(
         default="",
         validation_alias="BRIGHT_DATA_API_KEY",
@@ -140,6 +137,35 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # Bright Data Remote MCP
+    # ------------------------------------------------------------------
+
+    bright_data_mcp_base_url: str = Field(
+        default="https://mcp.brightdata.com/mcp",
+        validation_alias="BRIGHT_DATA_MCP_BASE_URL",
+    )
+
+    bright_data_mcp_tools: str = Field(
+        default="search_engine,scrape_as_markdown",
+        validation_alias="BRIGHT_DATA_MCP_TOOLS",
+    )
+
+    bright_data_mcp_groups: str = Field(
+        default="",
+        validation_alias="BRIGHT_DATA_MCP_GROUPS",
+    )
+
+    bright_data_mcp_unlocker_zone: str = Field(
+        default="",
+        validation_alias="BRIGHT_DATA_MCP_UNLOCKER_ZONE",
+    )
+
+    bright_data_mcp_pro: bool = Field(
+        default=False,
+        validation_alias="BRIGHT_DATA_MCP_PRO",
+    )
+
+    # ------------------------------------------------------------------
     # Bright Data Proxy Network
     # ------------------------------------------------------------------
 
@@ -153,8 +179,6 @@ class Settings(BaseSettings):
         validation_alias="BRIGHT_DATA_PROXY_PORT",
     )
 
-    # Existing generic proxy credentials are the verified
-    # Data Center proxy credentials.
     bright_data_proxy_user: str = Field(
         default="",
         validation_alias="BRIGHT_DATA_PROXY_USER",
@@ -165,7 +189,6 @@ class Settings(BaseSettings):
         validation_alias="BRIGHT_DATA_PROXY_PASS",
     )
 
-    # Separate ISP proxy credentials.
     bright_data_isp_proxy_user: str = Field(
         default="",
         validation_alias="BRIGHT_DATA_ISP_PROXY_USER",
@@ -176,15 +199,11 @@ class Settings(BaseSettings):
         validation_alias="BRIGHT_DATA_ISP_PROXY_PASS",
     )
 
-    # Default proxy product used by Sentinel.
-    # The actual Bright Data zone is also encoded in the proxy username.
     bright_data_zone: ProxyType = Field(
         default="data_center",
         validation_alias="BRIGHT_DATA_ZONE",
     )
 
-    # Optional complete proxy URLs retained for compatibility with older
-    # deployments. New code should prefer the individual credential fields.
     data_center_proxy: str = Field(
         default="",
         validation_alias="DATA_CENTER_PROXY",
@@ -219,7 +238,7 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
-    # Normalized helper properties
+    # Helper properties and methods
     # ------------------------------------------------------------------
 
     @property
@@ -239,7 +258,7 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         """Return True when Sentinel is running in production mode."""
-        return self.app_env.lower() == "production"
+        return self.app_env.strip().lower() == "production"
 
     @property
     def proxy_endpoint(self) -> str:
@@ -247,6 +266,77 @@ class Settings(BaseSettings):
         return (
             f"{self.bright_data_proxy_host}:"
             f"{self.bright_data_proxy_port}"
+        )
+
+    @staticmethod
+    def _normalize_csv(value: str) -> list[str]:
+        """Normalize comma-separated values while preserving order."""
+        normalized: list[str] = []
+        seen: set[str] = set()
+
+        for item in value.split(","):
+            cleaned = item.strip()
+
+            if cleaned and cleaned not in seen:
+                normalized.append(cleaned)
+                seen.add(cleaned)
+
+        return normalized
+
+    @property
+    def bright_data_mcp_tool_list(self) -> list[str]:
+        """Return normalized, de-duplicated MCP tool names."""
+        return self._normalize_csv(self.bright_data_mcp_tools)
+
+    @property
+    def bright_data_mcp_group_list(self) -> list[str]:
+        """Return normalized, de-duplicated MCP group names."""
+        return self._normalize_csv(self.bright_data_mcp_groups)
+
+    def build_bright_data_mcp_url(self) -> str:
+        """
+        Build the authenticated Bright Data Remote MCP endpoint.
+
+        The resulting URL contains the API token. Never log, print, return,
+        or commit the generated value.
+        """
+        base_url = self.bright_data_mcp_base_url.strip()
+
+        if not self.bright_data_api_key:
+            raise ValueError(
+                "BRIGHT_DATA_API_KEY is required for Remote MCP."
+            )
+
+        if not base_url:
+            raise ValueError(
+                "BRIGHT_DATA_MCP_BASE_URL is required."
+            )
+
+        parameters: dict[str, str] = {
+            "token": self.bright_data_api_key,
+        }
+
+        groups = self.bright_data_mcp_group_list
+        tools = self.bright_data_mcp_tool_list
+        unlocker_zone = self.bright_data_mcp_unlocker_zone.strip()
+
+        if groups:
+            parameters["groups"] = ",".join(groups)
+
+        if tools:
+            parameters["tools"] = ",".join(tools)
+
+        if unlocker_zone:
+            parameters["unlocker"] = unlocker_zone
+
+        if self.bright_data_mcp_pro:
+            parameters["pro"] = "1"
+
+        separator = "&" if "?" in base_url else "?"
+
+        return (
+            f"{base_url}{separator}"
+            f"{urlencode(parameters)}"
         )
 
     def get_proxy_credentials(
