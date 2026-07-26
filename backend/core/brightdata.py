@@ -6,7 +6,7 @@ All live web-intelligence access flows through this module.
 
 import asyncio
 from typing import Dict, List, Optional
-from urllib.parse import quote, quote_plus
+from urllib.parse import quote, quote_plus, urlparse
 
 import httpx
 
@@ -20,6 +20,26 @@ MAX_SERP_RESULTS = 20
 SERP_TIMEOUT_SECONDS = 45
 WEB_UNLOCKER_TIMEOUT_SECONDS = 45
 PROXY_TIMEOUT_SECONDS = 30
+
+WEB_UNLOCKER_ERROR_MARKERS = (
+    "request failed",
+    "bad_endpoint",
+    "not available for immediate access mode",
+    "ask your account manager",
+    "access denied",
+    "zone is not active",
+    "invalid zone",
+)
+
+
+def _is_valid_http_url(url: str) -> bool:
+    """Return True only for absolute HTTP or HTTPS URLs."""
+    parsed = urlparse(url)
+
+    return (
+        parsed.scheme in {"http", "https"}
+        and bool(parsed.netloc)
+    )
 
 
 class BrightDataSERPClient:
@@ -231,6 +251,29 @@ class BrightDataWebUnlocker:
         self.api_key = settings.bright_data_api_key
         self.base_url = settings.bright_data_web_unlocker_url
 
+    @staticmethod
+    def _is_error_response(
+        content: str,
+    ) -> bool:
+        """
+        Detect Bright Data error messages returned with HTTP 200.
+
+        Bright Data can return a successful HTTP status while placing an
+        error such as ``bad_endpoint`` inside the response body. Such text
+        must never be passed to CrewAI as retrieved evidence.
+        """
+        normalized = content.strip().lower()
+
+        if not normalized:
+            return True
+
+        inspected_content = normalized[:2000]
+
+        return any(
+            marker in inspected_content
+            for marker in WEB_UNLOCKER_ERROR_MARKERS
+        )
+
     async def fetch_url(
         self,
         url: str,
@@ -241,6 +284,13 @@ class BrightDataWebUnlocker:
 
         if not normalized_url:
             print("[WEB UNLOCKER INPUT ERROR] URL is empty.")
+            return None
+
+        if not _is_valid_http_url(normalized_url):
+            print(
+                "[WEB UNLOCKER INPUT ERROR] "
+                "URL must use http:// or https://."
+            )
             return None
 
         if not self.api_key:
@@ -289,12 +339,22 @@ class BrightDataWebUnlocker:
 
             response.raise_for_status()
 
+            content = response.text.strip()
+
+            if self._is_error_response(content):
+                print(
+                    "[WEB UNLOCKER REJECTED] "
+                    "Bright Data returned an error body "
+                    f"for url={normalized_url}"
+                )
+                return None
+
             print(
                 "[WEB UNLOCKER SUCCESS] "
                 f"status={response.status_code}; "
-                f"characters={len(response.text)}"
+                f"characters={len(content)}"
             )
-            return response.text
+            return content
 
         except httpx.HTTPStatusError as error:
             print(
@@ -418,6 +478,13 @@ class BrightDataProxyClient:
             print("[PROXY INPUT ERROR] URL is empty.")
             return None
 
+        if not _is_valid_http_url(normalized_url):
+            print(
+                "[PROXY INPUT ERROR] "
+                "URL must use http:// or https://."
+            )
+            return None
+
         try:
             selected_proxy = self._validate_proxy_type(
                 proxy_type or self.default_proxy_type
@@ -449,13 +516,22 @@ class BrightDataProxyClient:
 
             response.raise_for_status()
 
+            content = response.text.strip()
+
+            if not content:
+                print(
+                    "[PROXY EMPTY RESPONSE] "
+                    f"type={selected_proxy}"
+                )
+                return None
+
             print(
                 "[PROXY SUCCESS] "
                 f"type={selected_proxy}; "
                 f"status={response.status_code}; "
-                f"characters={len(response.text)}"
+                f"characters={len(content)}"
             )
-            return response.text
+            return content
 
         except httpx.HTTPStatusError as error:
             print(
@@ -521,12 +597,12 @@ class BrightDataProxyClient:
 
 class BrightDataMCPClient:
     """
-    Compatibility adapter for Sentinel's existing agent interface.
+    Deprecated compatibility adapter for Sentinel's former MCP interface.
 
-    This class does not open a genuine remote MCP session. Search requests
+    This class does not open a genuine Remote MCP session. Search requests
     route through the SERP client and scrape requests route through Web
-    Unlocker. It is retained temporarily so existing orchestrator imports do
-    not break while a genuine Bright Data MCP client is implemented.
+    Unlocker. Production orchestration should use
+    ``core.brightdata_remote_mcp.remote_mcp_client`` instead.
     """
 
     MCP_TOOL_DESCRIPTIONS = {
@@ -552,10 +628,19 @@ class BrightDataMCPClient:
     async def search(
         self,
         query: str,
+        limit: int = 10,
     ) -> List[SearchResult]:
         """Route search through SERP with an accurate traceability tag."""
+        normalized_query = query.strip()
+
+        if not normalized_query or limit <= 0:
+            return []
+
         serp = BrightDataSERPClient()
-        results = await serp.search(query)
+        results = await serp.search(
+            normalized_query,
+            num_results=limit,
+        )
 
         for result in results:
             result["source"] = "bright_data_serp_adapter"
