@@ -1,19 +1,21 @@
 """FastAPI contract for pre-investigation vendor identity resolution.
 
-The router is deliberately isolated from the investigation endpoint. It never
-creates jobs, runs CrewAI, writes reports, or starts vendor-risk scoring.
+The router is isolated from the investigation endpoint. It never creates jobs,
+runs CrewAI, writes reports, or starts vendor-risk scoring.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from core.live_vendor_identity import (
+    IdentityEvidenceBatch,
+    collect_live_vendor_identity_evidence,
+)
 from core.vendor_resolution import (
-    CandidateEvidence,
     resolve_vendor_candidates,
 )
 
@@ -53,45 +55,14 @@ class VendorResolutionRequest(BaseModel):
     )
 
 
-@dataclass(frozen=True)
-class IdentityEvidenceBatch:
-    """Evidence returned by a configured live identity-search provider."""
-
-    records: tuple[CandidateEvidence, ...]
-    search_performed: bool
-    providers: tuple[str, ...]
-    warnings: tuple[str, ...] = ()
-
-
 IdentityEvidenceCollector = Callable[
     [VendorResolutionRequest],
     Awaitable[IdentityEvidenceBatch],
 ]
 
 
-async def collect_unconfigured_identity_evidence(
-    request: VendorResolutionRequest,
-) -> IdentityEvidenceBatch:
-    """
-    Safe placeholder until live identity retrieval is connected.
-
-    It intentionally makes no network call and never claims that internet
-    coverage was searched.
-    """
-    del request
-
-    return IdentityEvidenceBatch(
-        records=(),
-        search_performed=False,
-        providers=(),
-        warnings=(
-            "Live vendor identity retrieval is not connected yet.",
-        ),
-    )
-
-
 identity_evidence_collector: IdentityEvidenceCollector = (
-    collect_unconfigured_identity_evidence
+    collect_live_vendor_identity_evidence
 )
 
 
@@ -166,7 +137,6 @@ async def resolve_vendor_identity(
             detail=str(error),
         ) from error
     except Exception as error:
-        # Do not expose provider credentials, request details, or stack traces.
         raise HTTPException(
             status_code=503,
             detail=(
@@ -197,9 +167,21 @@ async def resolve_vendor_identity(
         "candidate_evidence_records": len(
             evidence_batch.records
         ),
+        "queries_executed": list(
+            evidence_batch.queries_executed
+        ),
+        "started_at": (
+            evidence_batch.started_at
+        ),
+        "completed_at": (
+            evidence_batch.completed_at
+        ),
         "assessment_type": (
             "pre_investigation_identity_resolution"
         ),
+        "llm_used": False,
+        "risk_scoring_started": False,
+        "database_writes": 0,
     }
 
     return payload
