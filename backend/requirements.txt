@@ -1,5 +1,5 @@
 fastapi==0.115.0
-uvicorn[standard]==0.30.6
+uvicorn[standard]==0.31.1
 crewai>=0.80.0
 openai==1.51.0
 anthropic==0.34.0
@@ -19,4 +19,4 @@ sqlite-utils==3.37
 tenacity>=8.2.3,<9.0.0
 groq>=0.9.0
 langchain-groq>=0.1.0
-mcp>=1.27,<2
+mcp==1.28.1
