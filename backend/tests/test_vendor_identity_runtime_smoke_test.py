@@ -439,3 +439,90 @@ def test_runtime_config_rejects_unknown_fields(
         raise AssertionError(
             "Unknown runtime fields were accepted."
         )
+
+
+
+def test_official_subdomain_is_accepted_for_supplied_root() -> None:
+    accepted = [
+        _official_result(
+            "news.example.com"
+        )
+    ]
+    candidate = _candidate(
+        domain="example.com"
+    )
+
+    payload = {
+        "resolution_status": "CONFIRMED",
+        "selected_candidate": candidate,
+        "candidates": [candidate],
+        "identity_search": _search(
+            accepted=accepted
+        ),
+    }
+    expectation = RuntimeExpectation(
+        expected_status="CONFIRMED",
+        minimum_confidence=0.90,
+        require_official_website=True,
+        require_zero_authenticated_evidence=False,
+    )
+
+    assert validate_runtime_response(
+        payload,
+        {
+            "vendor_name": "Example",
+            "website": (
+                "https://example.com"
+            ),
+        },
+        expectation,
+    ) == []
+
+
+def test_page_title_cannot_be_confirmed_as_legal_name() -> None:
+    accepted = [
+        {
+            **_official_result(),
+            "proposed_legal_name": (
+                "Example Trademark and Brand Guidelines"
+            ),
+        }
+    ]
+    candidate = {
+        **_candidate(),
+        "legal_name": (
+            "Example Trademark and Brand Guidelines"
+        ),
+    }
+
+    payload = {
+        "resolution_status": "CONFIRMED",
+        "selected_candidate": candidate,
+        "candidates": [candidate],
+        "identity_search": _search(
+            accepted=accepted
+        ),
+    }
+    expectation = RuntimeExpectation(
+        expected_status="CONFIRMED",
+        minimum_confidence=0.90,
+        require_official_website=True,
+        require_zero_authenticated_evidence=False,
+    )
+
+    errors = validate_runtime_response(
+        payload,
+        {
+            "vendor_name": "Example",
+            "website": (
+                "https://example.com"
+            ),
+        },
+        expectation,
+    )
+
+    assert any(
+        "page or document title"
+        in error
+        for error in errors
+    )
