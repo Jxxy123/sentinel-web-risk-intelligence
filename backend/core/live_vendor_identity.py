@@ -1,9 +1,8 @@
 """Live, conservative vendor identity discovery for Sentinel Web-Risk.
 
-The collector uses existing Bright Data SERP and genuine Remote MCP search
-clients. It performs no scraping, LLM inference, risk scoring, or database
-writes. Search-result text is treated as candidate identity evidence, not as a
-verified risk claim.
+Search results are treated only as identity leads. A page is never called an
+official company website merely because its title contains words such as
+"official", "company", "home", or "about".
 """
 
 from __future__ import annotations
@@ -25,6 +24,7 @@ SERP_TIMEOUT_SECONDS = 50
 MCP_TIMEOUT_SECONDS = 50
 MAX_RESULTS_PER_QUERY = 8
 MAX_IDENTITY_RECORDS = 24
+MAX_REJECTED_RESULTS = 24
 
 REPUTABLE_NEWS_DOMAINS = {
     "reuters.com",
@@ -42,7 +42,12 @@ BUSINESS_DIRECTORY_DOMAINS = {
     "dnb.com",
     "opencorporates.com",
     "zoominfo.com",
-    "bloomberg.com",
+    "pitchbook.com",
+    "ibphub.com",
+    "thecompanycheck.com",
+    "tracxn.com",
+    "owler.com",
+    "companieshouse.gov.uk",
 }
 
 SOCIAL_DOMAINS = {
@@ -58,6 +63,86 @@ SEARCH_PLATFORM_DOMAINS = {
     "google.com",
     "bing.com",
     "yahoo.com",
+}
+
+REGISTRY_DOMAIN_MARKERS = (
+    "sec.gov",
+    "business.gov",
+    "registry",
+    "registrar",
+    "commission",
+    "authority",
+    "ministry",
+    "companieshouse.gov.uk",
+)
+
+INFORMATIONAL_HOST_MARKERS = (
+    "chamber",
+    "handelskammer",
+    "law",
+    "legal",
+    "accounting",
+    "cpa",
+    "consulting",
+    "consultancy",
+)
+
+REJECT_PATH_PATTERNS = (
+    r"\.pdf(?:$|[?#])",
+    r"/blog(?:/|$)",
+    r"/blogs(?:/|$)",
+    r"/category(?:/|$)",
+    r"/categories(?:/|$)",
+    r"/news(?:/|$)",
+    r"/article(?:/|$)",
+    r"/articles(?:/|$)",
+    r"/guide(?:/|$)",
+    r"/guides(?:/|$)",
+    r"/resources?(?:/|$)",
+    r"/downloads?(?:/|$)",
+    r"/page/\d+(?:/|$)",
+)
+
+COMPANY_PAGE_PATH_PATTERNS = (
+    r"/about(?:[-_/]|$)",
+    r"/about-us(?:/|$)",
+    r"/company(?:[-_/]|$)",
+    r"/corporate(?:[-_/]|$)",
+    r"/contact(?:[-_/]|$)",
+    r"/who-we-are(?:/|$)",
+    r"/profile(?:[-_/]|$)",
+)
+
+GENERIC_DOMAIN_TOKENS = {
+    "www",
+    "com",
+    "co",
+    "net",
+    "org",
+    "info",
+    "biz",
+    "group",
+    "company",
+    "official",
+    "online",
+    "store",
+}
+
+LEGAL_NAME_TOKENS = {
+    "inc",
+    "incorporated",
+    "corp",
+    "corporation",
+    "company",
+    "co",
+    "ltd",
+    "limited",
+    "llc",
+    "plc",
+    "pte",
+    "gmbh",
+    "group",
+    "holdings",
 }
 
 COUNTRY_TLD_MAP = {
@@ -119,27 +204,6 @@ TITLE_SEPARATORS = (
     ": ",
 )
 
-OFFICIAL_HINTS = (
-    "official",
-    "home",
-    "homepage",
-    "about us",
-    "company",
-    "corporate",
-    "welcome",
-)
-
-REGISTRY_DOMAIN_MARKERS = (
-    "companieshouse.gov.uk",
-    "sec.gov",
-    "business.gov",
-    "registry",
-    "registrar",
-    "commission",
-    "authority",
-    "ministry",
-)
-
 
 class VendorResolutionRequestLike(Protocol):
     vendor_name: str
@@ -161,6 +225,7 @@ class IdentityEvidenceBatch:
     queries_executed: tuple[str, ...] = ()
     started_at: str | None = None
     completed_at: str | None = None
+    rejected_results: tuple[dict[str, str], ...] = ()
 
 
 def _utc_now_iso() -> str:
@@ -225,6 +290,111 @@ def _request_website_domain(
     return parsed.netloc.lower().removeprefix("www.")
 
 
+def _domain_tokens(domain: str) -> set[str]:
+    labels = domain.lower().split(".")
+    meaningful_labels = labels[:-1] if len(labels) > 1 else labels
+    tokens: set[str] = set()
+
+    for label in meaningful_labels:
+        tokens.update(
+            token
+            for token in re.split(
+                r"[^a-z0-9]+",
+                label,
+            )
+            if (
+                len(token) >= 2
+                and token not in GENERIC_DOMAIN_TOKENS
+            )
+        )
+
+    return tokens
+
+
+def _company_tokens(company_name: str) -> set[str]:
+    return {
+        token
+        for token in _normalize_text(
+            company_name
+        ).split()
+        if (
+            len(token) >= 2
+            and token not in LEGAL_NAME_TOKENS
+        )
+    }
+
+
+def _domain_company_similarity(
+    company_name: str,
+    domain: str,
+) -> float:
+    company_tokens = _company_tokens(
+        company_name
+    )
+    domain_tokens = _domain_tokens(
+        domain
+    )
+
+    if not company_tokens or not domain_tokens:
+        return 0.0
+
+    company_compact = "".join(
+        sorted(company_tokens)
+    )
+    domain_compact = "".join(
+        sorted(domain_tokens)
+    )
+
+    if (
+        company_compact
+        and company_compact in domain_compact
+    ):
+        return 1.0
+
+    overlap = len(
+        company_tokens & domain_tokens
+    )
+
+    return overlap / len(
+        company_tokens
+    )
+
+
+def _is_rejected_page_type(
+    url: str,
+) -> str | None:
+    parsed = urlparse(url)
+    path = parsed.path.lower()
+
+    for pattern in REJECT_PATH_PATTERNS:
+        if re.search(pattern, path):
+            if ".pdf" in pattern:
+                return "informational PDF or downloadable document"
+            if "category" in pattern or "page" in pattern:
+                return "archive or category page"
+            if "blog" in pattern or "article" in pattern or "news" in pattern:
+                return "article, blog, or news page"
+
+            return "informational guide or resource page"
+
+    return None
+
+
+def _looks_like_company_page(
+    url: str,
+) -> bool:
+    parsed = urlparse(url)
+    path = parsed.path.lower().rstrip("/")
+
+    if not path:
+        return True
+
+    return any(
+        re.search(pattern, path + "/")
+        for pattern in COMPANY_PAGE_PATH_PATTERNS
+    )
+
+
 def build_identity_queries(
     request: VendorResolutionRequestLike,
 ) -> tuple[str, str, str]:
@@ -247,56 +417,57 @@ def build_identity_queries(
         request.website
     )
     website_context = (
-        f' site:{website_domain}'
+        f" site:{website_domain}"
         if website_domain
         else ""
     )
 
-    official_query = " ".join(
-        part
-        for part in (
-            quoted_name,
-            context,
-            "official website company headquarters",
-            website_context,
-        )
-        if part
-    )
-    registry_query = " ".join(
-        part
-        for part in (
-            quoted_name,
-            context,
-            "company registry registration legal name industry",
-        )
-        if part
-    )
-    mcp_query = " ".join(
-        part
-        for part in (
-            quoted_name,
-            context,
-            "official website company profile country industry",
-        )
-        if part
-    )
-
     return (
-        official_query,
-        registry_query,
-        mcp_query,
+        " ".join(
+            part
+            for part in (
+                quoted_name,
+                context,
+                '"official website" headquarters contact',
+                website_context,
+            )
+            if part
+        ),
+        " ".join(
+            part
+            for part in (
+                quoted_name,
+                context,
+                "company registry registration legal name industry",
+            )
+            if part
+        ),
+        " ".join(
+            part
+            for part in (
+                quoted_name,
+                context,
+                '"official website" company profile country industry',
+            )
+            if part
+        ),
     )
 
 
 def classify_identity_source(
     url: str,
     *,
+    requested_name: str,
     requested_website_domain: str | None,
     combined_text: str,
 ) -> str:
-    """Classify a candidate source without claiming unsupported authority."""
+    """
+    Classify a source conservatively.
+
+    OFFICIAL_WEBSITE is reserved for a user-provided matching domain. Search
+    results can only establish POSSIBLE_COMPANY_WEBSITE until corroborated.
+    """
     domain = _domain(url)
-    normalized_text = combined_text.lower()
 
     if requested_website_domain and _registered_domain_matches(
         domain,
@@ -336,23 +507,31 @@ def classify_identity_source(
     ):
         return "REPUTABLE_NEWS"
 
-    official_hint = any(
-        hint in normalized_text
-        for hint in OFFICIAL_HINTS
-    )
-    blocked_domain = any(
-        domain == item
-        or domain.endswith("." + item)
-        for item in (
-            *BUSINESS_DIRECTORY_DOMAINS,
-            *SOCIAL_DOMAINS,
-            *REPUTABLE_NEWS_DOMAINS,
-            *SEARCH_PLATFORM_DOMAINS,
-        )
+    if any(
+        marker in domain
+        for marker in INFORMATIONAL_HOST_MARKERS
+    ):
+        return "GENERAL_WEB"
+
+    page_rejection = _is_rejected_page_type(
+        url
     )
 
-    if official_hint and not blocked_domain:
-        return "OFFICIAL_WEBSITE"
+    if page_rejection:
+        return "GENERAL_WEB"
+
+    similarity = _domain_company_similarity(
+        requested_name,
+        domain,
+    )
+
+    if (
+        similarity >= 0.50
+        and _looks_like_company_page(
+            url
+        )
+    ):
+        return "POSSIBLE_COMPANY_WEBSITE"
 
     return "GENERAL_WEB"
 
@@ -364,6 +543,12 @@ def _result_is_relevant(
     url: str,
     requested_website_domain: str | None,
 ) -> bool:
+    if requested_website_domain and _registered_domain_matches(
+        _domain(url),
+        requested_website_domain,
+    ):
+        return True
+
     combined = _normalize_text(
         f"{title} {snippet}"
     )
@@ -371,38 +556,16 @@ def _result_is_relevant(
         requested_name
     )
 
-    if requested_website_domain and _registered_domain_matches(
-        _domain(url),
-        requested_website_domain,
-    ):
-        return True
-
     if not requested:
         return False
 
-    if requested in combined:
-        return True
-
-    requested_tokens = [
-        token
-        for token in requested.split()
-        if len(token) >= 3
-    ]
-
-    return (
-        bool(requested_tokens)
-        and all(
-            token in combined
-            for token in requested_tokens
-        )
-    )
+    return requested in combined
 
 
 def _extract_legal_name(
     requested_name: str,
     title: str,
 ) -> str:
-    """Extract only a conservative title segment; otherwise keep user input."""
     cleaned_title = _clean(title)
 
     if not cleaned_title:
@@ -413,7 +576,7 @@ def _extract_legal_name(
     )
 
     candidates = [
-        cleaned_title
+        cleaned_title,
     ]
 
     for separator in TITLE_SEPARATORS:
@@ -500,18 +663,17 @@ def _industry_from_result(
 
     if (
         profile.key != "general"
-        and confidence >= 0.55
+        and confidence >= 0.70
     ):
         return profile.display_name
 
     return None
 
 
-def result_to_candidate_evidence(
+def _rejection_reason(
     request: VendorResolutionRequestLike,
     result: dict[str, str],
-) -> CandidateEvidence | None:
-    """Convert one relevant search result into conservative identity evidence."""
+) -> str | None:
     title = _clean(
         result.get("title")
     )
@@ -523,9 +685,9 @@ def result_to_candidate_evidence(
     )
 
     if not _valid_http_url(url):
-        return None
+        return "invalid or missing HTTP URL"
 
-    requested_website_domain = _request_website_domain(
+    requested_domain = _request_website_domain(
         request.website
     )
 
@@ -534,19 +696,79 @@ def result_to_candidate_evidence(
         title,
         snippet,
         url,
-        requested_website_domain,
+        requested_domain,
     ):
+        return "target company name is not directly present in the result"
+
+    page_reason = _is_rejected_page_type(
+        url
+    )
+
+    if page_reason and not (
+        requested_domain
+        and _registered_domain_matches(
+            _domain(url),
+            requested_domain,
+        )
+    ):
+        return page_reason
+
+    quality = classify_identity_source(
+        url,
+        requested_name=request.vendor_name,
+        requested_website_domain=requested_domain,
+        combined_text=f"{title} {snippet}",
+    )
+
+    if quality in {
+        "SOCIAL",
+        "REPUTABLE_NEWS",
+    }:
+        return (
+            "source may provide context but does not establish "
+            "the company's official identity"
+        )
+
+    if quality == "GENERAL_WEB":
+        return (
+            "company ownership of the domain or page is not established"
+        )
+
+    return None
+
+
+def result_to_candidate_evidence(
+    request: VendorResolutionRequestLike,
+    result: dict[str, str],
+) -> CandidateEvidence | None:
+    """Convert one identity result only when it passes authenticity controls."""
+    rejection = _rejection_reason(
+        request,
+        result,
+    )
+
+    if rejection:
         return None
 
+    title = _clean(
+        result.get("title")
+    )
+    snippet = _clean(
+        result.get("snippet")
+    )
+    url = _clean(
+        result.get("url")
+    )
+    requested_domain = _request_website_domain(
+        request.website
+    )
     combined_text = f"{title} {snippet}".strip()
     source_quality = classify_identity_source(
         url,
-        requested_website_domain=(
-            requested_website_domain
-        ),
+        requested_name=request.vendor_name,
+        requested_website_domain=requested_domain,
         combined_text=combined_text,
     )
-
     legal_name = _extract_legal_name(
         request.vendor_name,
         title,
@@ -554,7 +776,11 @@ def result_to_candidate_evidence(
 
     candidate_website = (
         url
-        if source_quality == "OFFICIAL_WEBSITE"
+        if source_quality
+        in {
+            "OFFICIAL_WEBSITE",
+            "POSSIBLE_COMPANY_WEBSITE",
+        }
         else None
     )
 
@@ -698,8 +924,29 @@ class LiveVendorIdentityCollector:
             )
 
         records: list[CandidateEvidence] = []
+        rejected: list[dict[str, str]] = []
 
         for result in unique_results:
+            rejection = _rejection_reason(
+                request,
+                result,
+            )
+
+            if rejection:
+                if len(rejected) < MAX_REJECTED_RESULTS:
+                    rejected.append(
+                        {
+                            "url": _clean(
+                                result.get("url")
+                            ),
+                            "title": _clean(
+                                result.get("title")
+                            ),
+                            "reason": rejection,
+                        }
+                    )
+                continue
+
             record = result_to_candidate_evidence(
                 request,
                 result,
@@ -729,6 +976,9 @@ class LiveVendorIdentityCollector:
             queries_executed=queries,
             started_at=started_at,
             completed_at=_utc_now_iso(),
+            rejected_results=tuple(
+                rejected
+            ),
         )
 
 
@@ -738,7 +988,7 @@ _default_collector = LiveVendorIdentityCollector()
 async def collect_live_vendor_identity_evidence(
     request: VendorResolutionRequestLike,
 ) -> IdentityEvidenceBatch:
-    """Collect live identity evidence using the configured default clients."""
+    """Collect live identity evidence using configured default clients."""
     return await _default_collector.collect(
         request
     )
