@@ -57,6 +57,27 @@ FORBIDDEN_RESPONSE_FIELDS = {
 }
 
 
+FORBIDDEN_CANDIDATE_SOURCE_LABELS = {
+    "GENERAL_WEB",
+    "SOCIAL",
+    "REPUTABLE_NEWS",
+}
+
+FORBIDDEN_CANDIDATE_PATH_MARKERS = (
+    ".pdf",
+    "/blog/",
+    "/blogs/",
+    "/category/",
+    "/article/",
+    "/articles/",
+    "/news/",
+    "/guide/",
+    "/guides/",
+    "/download/",
+    "/downloads/",
+)
+
+
 def _clean(value: Any) -> str:
     if value is None:
         return ""
@@ -136,6 +157,43 @@ def _validate_candidate(
             "Candidate contains an invalid evidence URL.",
         )
 
+    source_labels = candidate.get(
+        "source_quality_labels"
+    )
+    _require(
+        isinstance(source_labels, list),
+        "Candidate source_quality_labels must be a list.",
+    )
+    _require(
+        not (
+            set(source_labels)
+            & FORBIDDEN_CANDIDATE_SOURCE_LABELS
+        ),
+        (
+            "Candidate contains a source class that cannot "
+            "establish company identity."
+        ),
+    )
+
+    evidence_count = candidate.get(
+        "evidence_source_count"
+    )
+    _require(
+        isinstance(evidence_count, int)
+        and evidence_count >= 1,
+        "Candidate evidence_source_count must be a positive integer.",
+    )
+
+    if evidence_count == 1 and "AUTHORITATIVE" not in source_labels:
+        _require(
+            confidence <= 0.54
+            and label == "LIMITED",
+            (
+                "Single-source non-authoritative candidate is "
+                "overconfident."
+            ),
+        )
+
     website = _clean(
         candidate.get("website")
     )
@@ -144,6 +202,17 @@ def _validate_candidate(
         _require(
             _valid_http_url(website),
             "Candidate contains an invalid website URL.",
+        )
+        normalized_website = website.lower()
+        _require(
+            not any(
+                marker in normalized_website
+                for marker in FORBIDDEN_CANDIDATE_PATH_MARKERS
+            ),
+            (
+                "Candidate website points to an article, archive, "
+                "guide, download, or PDF."
+            ),
         )
 
 
@@ -197,6 +266,17 @@ def validate_identity_response(
 
     for candidate in candidates:
         _validate_candidate(candidate)
+        _require(
+            "OFFICIAL_WEBSITE"
+            not in candidate.get(
+                "source_quality_labels",
+                [],
+            ),
+            (
+                "Search-discovered candidate was falsely labelled "
+                "OFFICIAL_WEBSITE without a user-provided domain."
+            ),
+        )
         candidate_id = _clean(
             candidate.get("candidate_id")
         )
@@ -233,6 +313,25 @@ def validate_identity_response(
         _require(
             len(candidates) >= 2,
             "SELECTION_REQUIRED must provide at least two candidates.",
+        )
+        _require(
+            all(
+                candidate.get(
+                    "evidence_source_count",
+                    0,
+                )
+                >= 2
+                and candidate.get(
+                    "identity_confidence",
+                    0,
+                )
+                >= 0.65
+                for candidate in candidates
+            ),
+            (
+                "SELECTION_REQUIRED contains a candidate without "
+                "independent identity support."
+            ),
         )
 
     if status == "MORE_INFORMATION_REQUIRED":
@@ -311,6 +410,55 @@ def validate_identity_response(
         "candidate_evidence_records must be a non-negative integer.",
     )
 
+    rejected_results = search.get(
+        "rejected_results"
+    )
+    rejected_count = search.get(
+        "rejected_result_count"
+    )
+    _require(
+        isinstance(rejected_results, list),
+        "rejected_results must be a list.",
+    )
+    _require(
+        isinstance(rejected_count, int)
+        and rejected_count == len(
+            rejected_results
+        ),
+        "rejected_result_count does not match rejected_results.",
+    )
+
+    for rejected in rejected_results:
+        _require(
+            isinstance(rejected, dict),
+            "Every rejected identity result must be an object.",
+        )
+        _require(
+            set(rejected) == {
+                "url",
+                "title",
+                "reason",
+            },
+            (
+                "Rejected identity audit must contain only "
+                "url, title, and reason."
+            ),
+        )
+        _require(
+            _valid_http_url(
+                rejected.get("url")
+            ),
+            "Rejected identity result contains an invalid URL.",
+        )
+        _require(
+            bool(
+                _clean(
+                    rejected.get("reason")
+                )
+            ),
+            "Rejected identity result is missing a reason.",
+        )
+
     _require(
         bool(_clean(search.get("started_at"))),
         "Identity search is missing started_at.",
@@ -343,6 +491,7 @@ def validate_identity_response(
         "resolution_status": status,
         "candidate_count": len(candidates),
         "candidate_evidence_records": record_count,
+        "rejected_result_count": rejected_count,
         "providers": providers,
         "warnings": search.get("warnings", []),
         "validated_no_job": True,
@@ -437,6 +586,10 @@ def main() -> None:
     print(
         "Identity evidence records: "
         f"{validation['candidate_evidence_records']}"
+    )
+    print(
+        "Rejected identity results: "
+        f"{validation['rejected_result_count']}"
     )
     print(
         "Providers: "
