@@ -1,7 +1,7 @@
 """Generic live smoke runner for runtime vendor identity inputs.
 
 No vendor, website, country, city, or industry is embedded in this module.
-Every test input is supplied at workflow runtime.
+Every test input is supplied dynamically through a runtime JSON configuration file or environment variables.
 """
 
 from __future__ import annotations
@@ -73,21 +73,100 @@ def _env(name: str, default: str = "") -> str:
     return _clean(os.getenv(name, default))
 
 
-def _env_bool(name: str, default: bool = False) -> bool:
-    value = _env(
-        name,
-        "true" if default else "false",
-    ).lower()
+def _coerce_bool(
+    value: Any,
+    *,
+    field_name: str,
+    default: bool = False,
+) -> bool:
+    if value is None or value == "":
+        return default
 
-    if value in {"true", "1", "yes", "on"}:
+    if isinstance(value, bool):
+        return value
+
+    normalized = _clean(value).lower()
+
+    if normalized in {"true", "1", "yes", "on"}:
         return True
 
-    if value in {"false", "0", "no", "off", ""}:
+    if normalized in {"false", "0", "no", "off"}:
         return False
 
     raise ValueError(
-        f"{name} must be true or false."
+        f"{field_name} must be true or false."
     )
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    return _coerce_bool(
+        os.getenv(name),
+        field_name=name,
+        default=default,
+    )
+
+
+RUNTIME_CONFIG_FIELDS = {
+    "vendor_name",
+    "website",
+    "country",
+    "city",
+    "industry",
+    "language",
+    "expected_status",
+    "minimum_confidence",
+    "require_official_website",
+    "require_zero_authenticated_evidence",
+}
+
+
+def load_runtime_config(
+    config_path: str | Path,
+) -> dict[str, Any]:
+    path = Path(config_path)
+
+    if not path.is_file():
+        raise ValueError(
+            f"Runtime configuration file not found: {path}"
+        )
+
+    try:
+        payload = json.loads(
+            path.read_text(encoding="utf-8")
+        )
+    except json.JSONDecodeError as error:
+        raise ValueError(
+            "Runtime configuration must contain valid JSON."
+        ) from error
+
+    if not isinstance(payload, dict):
+        raise ValueError(
+            "Runtime configuration must be a JSON object."
+        )
+
+    unknown_fields = sorted(
+        set(payload) - RUNTIME_CONFIG_FIELDS
+    )
+
+    if unknown_fields:
+        raise ValueError(
+            "Runtime configuration contains unsupported fields: "
+            + ", ".join(unknown_fields)
+        )
+
+    return payload
+
+
+def _config_or_env(
+    config: dict[str, Any],
+    config_key: str,
+    env_name: str,
+    default: Any = "",
+) -> Any:
+    if config_key in config:
+        return config[config_key]
+
+    return os.getenv(env_name, default)
 
 
 def _domain(value: Any) -> str:
@@ -122,8 +201,21 @@ def build_runtime_request() -> tuple[
     dict[str, str],
     RuntimeExpectation,
 ]:
-    vendor_name = _env(
-        "IDENTITY_RUNTIME_VENDOR_NAME"
+    config_file = _env(
+        "IDENTITY_RUNTIME_CONFIG_FILE"
+    )
+    config = (
+        load_runtime_config(config_file)
+        if config_file
+        else {}
+    )
+
+    vendor_name = _clean(
+        _config_or_env(
+            config,
+            "vendor_name",
+            "IDENTITY_RUNTIME_VENDOR_NAME",
+        )
     )
 
     if not vendor_name:
@@ -131,29 +223,48 @@ def build_runtime_request() -> tuple[
             "vendor_name is required."
         )
 
+    language = _clean(
+        _config_or_env(
+            config,
+            "language",
+            "IDENTITY_RUNTIME_LANGUAGE",
+            "EN",
+        )
+    ).upper() or "EN"
+
     request_body = {
         "vendor_name": vendor_name,
-        "language": (
-            _env(
-                "IDENTITY_RUNTIME_LANGUAGE",
-                "EN",
-            )
-            or "EN"
-        ).upper(),
+        "language": language,
     }
 
     optional_fields = {
-        "website": _env(
-            "IDENTITY_RUNTIME_WEBSITE"
+        "website": _clean(
+            _config_or_env(
+                config,
+                "website",
+                "IDENTITY_RUNTIME_WEBSITE",
+            )
         ),
-        "country": _env(
-            "IDENTITY_RUNTIME_COUNTRY"
+        "country": _clean(
+            _config_or_env(
+                config,
+                "country",
+                "IDENTITY_RUNTIME_COUNTRY",
+            )
         ),
-        "city": _env(
-            "IDENTITY_RUNTIME_CITY"
+        "city": _clean(
+            _config_or_env(
+                config,
+                "city",
+                "IDENTITY_RUNTIME_CITY",
+            )
         ),
-        "industry": _env(
-            "IDENTITY_RUNTIME_INDUSTRY"
+        "industry": _clean(
+            _config_or_env(
+                config,
+                "industry",
+                "IDENTITY_RUNTIME_INDUSTRY",
+            )
         ),
     }
 
@@ -165,13 +276,14 @@ def build_runtime_request() -> tuple[
         }
     )
 
-    expected_status = (
-        _env(
+    expected_status = _clean(
+        _config_or_env(
+            config,
+            "expected_status",
             "IDENTITY_RUNTIME_EXPECTED_STATUS",
             "ANY_SAFE",
         )
-        or "ANY_SAFE"
-    ).upper()
+    ).upper() or "ANY_SAFE"
 
     if expected_status not in (
         ALLOWED_STATUSES
@@ -184,11 +296,12 @@ def build_runtime_request() -> tuple[
         )
 
     minimum_confidence = float(
-        _env(
+        _config_or_env(
+            config,
+            "minimum_confidence",
             "IDENTITY_RUNTIME_MINIMUM_CONFIDENCE",
             "0.90",
         )
-        or "0.90"
     )
 
     if not 0 <= minimum_confidence <= 1:
@@ -199,11 +312,25 @@ def build_runtime_request() -> tuple[
     expectation = RuntimeExpectation(
         expected_status=expected_status,
         minimum_confidence=minimum_confidence,
-        require_official_website=_env_bool(
-            "IDENTITY_RUNTIME_REQUIRE_OFFICIAL_WEBSITE"
+        require_official_website=_coerce_bool(
+            _config_or_env(
+                config,
+                "require_official_website",
+                "IDENTITY_RUNTIME_REQUIRE_OFFICIAL_WEBSITE",
+                False,
+            ),
+            field_name="require_official_website",
         ),
-        require_zero_authenticated_evidence=_env_bool(
-            "IDENTITY_RUNTIME_REQUIRE_ZERO_EVIDENCE"
+        require_zero_authenticated_evidence=_coerce_bool(
+            _config_or_env(
+                config,
+                "require_zero_authenticated_evidence",
+                "IDENTITY_RUNTIME_REQUIRE_ZERO_EVIDENCE",
+                False,
+            ),
+            field_name=(
+                "require_zero_authenticated_evidence"
+            ),
         ),
     )
 
