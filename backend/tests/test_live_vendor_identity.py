@@ -430,3 +430,125 @@ def test_run_003_false_matches_produce_zero_identity_records() -> None:
     assert batch.records == ()
     assert batch.accepted_results == ()
     assert batch.directory_leads == ()
+
+
+
+def test_official_page_title_does_not_become_legal_name() -> None:
+    record = result_to_candidate_evidence(
+        _request(
+            vendor_name="Microsoft",
+            website="https://www.microsoft.com",
+            country="United States",
+            industry="Technology",
+        ),
+        {
+            "title": (
+                "Microsoft Trademark and Brand Guidelines"
+            ),
+            "url": (
+                "https://www.microsoft.com/en-us/legal/"
+                "intellectualproperty/trademarks"
+            ),
+            "snippet": (
+                "Microsoft trademark guidance for customers."
+            ),
+        },
+    )
+
+    assert record is not None
+    assert record.legal_name == "Microsoft"
+    assert record.website == "https://www.microsoft.com"
+
+
+def test_official_subdomain_uses_supplied_root_website() -> None:
+    record = result_to_candidate_evidence(
+        _request(
+            vendor_name="Microsoft",
+            website="https://www.microsoft.com",
+            country="United States",
+        ),
+        {
+            "title": "Facts About Microsoft - Stories",
+            "url": (
+                "https://news.microsoft.com/"
+                "facts-about-microsoft/"
+            ),
+            "snippet": "Facts about Microsoft.",
+        },
+    )
+
+    assert record is not None
+    assert record.legal_name == "Microsoft"
+    assert record.website == "https://www.microsoft.com"
+    assert record.source_url.startswith(
+        "https://news.microsoft.com/"
+    )
+
+
+def test_directory_lead_uses_requested_company_name() -> None:
+    collector = LiveVendorIdentityCollector(
+        serp=FakeSERP(
+            responses=[
+                [
+                    {
+                        "title": (
+                            "Microsoft - Overview, News & "
+                            "Similar companies"
+                        ),
+                        "url": (
+                            "https://www.zoominfo.com/c/"
+                            "microsoft/24904409"
+                        ),
+                        "snippet": "Microsoft company profile.",
+                    }
+                ],
+                [],
+            ]
+        ),
+        mcp=FakeMCP(results=[]),
+    )
+
+    batch = asyncio.run(
+        collector.collect(
+            _request(
+                vendor_name="Microsoft"
+            )
+        )
+    )
+
+    assert len(batch.directory_leads) == 1
+    assert (
+        batch.directory_leads[0][
+            "proposed_legal_name"
+        ]
+        == "Microsoft"
+    )
+
+
+
+def test_official_report_does_not_replace_requested_country() -> None:
+    record = result_to_candidate_evidence(
+        _request(
+            vendor_name="Microsoft",
+            website="https://www.microsoft.com",
+            country="United States",
+            industry="Technology",
+        ),
+        {
+            "title": (
+                "Microsoft and its contribution to Brazil"
+            ),
+            "url": (
+                "https://www.microsoft.com/content/dam/"
+                "microsoft/report.pdf"
+            ),
+            "snippet": (
+                "A regional report about Microsoft in Brazil."
+            ),
+        },
+    )
+
+    assert record is not None
+    assert record.legal_name == "Microsoft"
+    assert record.country is None
+    assert record.industry is None
