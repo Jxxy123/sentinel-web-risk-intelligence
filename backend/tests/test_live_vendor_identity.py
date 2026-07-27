@@ -329,3 +329,104 @@ def test_collector_keeps_accepted_identity_audit() -> None:
     }
     assert audit["source_quality"] == "AUTHORITATIVE_IDENTITY"
     assert "registry" in audit["acceptance_reason"].lower()
+
+
+
+def test_linkedin_post_is_rejected_not_directory_evidence() -> None:
+    record = result_to_candidate_evidence(
+        _request(),
+        {
+            "title": "Business Trading Name Register in Namibia – Easy Guide",
+            "url": (
+                "https://www.linkedin.com/posts/example_"
+                "business-trading-name-register-activity-123"
+            ),
+            "snippet": "General registration guidance.",
+        },
+    )
+
+    assert record is None
+
+
+def test_zoominfo_different_company_name_is_rejected() -> None:
+    record = result_to_candidate_evidence(
+        _request(),
+        {
+            "title": "ABC Box - Overview, News & Similar companies",
+            "url": "https://www.zoominfo.com/c/abc-box-co/530495",
+            "snippet": "ABC Box company profile.",
+        },
+    )
+
+    assert record is None
+
+
+def test_matching_directory_profile_is_a_non_scoring_lead() -> None:
+    collector = LiveVendorIdentityCollector(
+        serp=FakeSERP(
+            responses=[
+                [
+                    {
+                        "title": "ABC Trading Ltd. - Company Profile",
+                        "url": (
+                            "https://www.linkedin.com/company/"
+                            "abc-trading-ltd"
+                        ),
+                        "snippet": "ABC Trading Ltd. company profile.",
+                    }
+                ],
+                [],
+            ]
+        ),
+        mcp=FakeMCP(results=[]),
+    )
+
+    batch = asyncio.run(collector.collect(_request()))
+
+    assert batch.records == ()
+    assert batch.accepted_results == ()
+    assert len(batch.directory_leads) == 1
+    lead = batch.directory_leads[0]
+    assert lead["source_quality"] == "DIRECTORY_LEAD"
+    assert "not used for identity scoring" in lead["lead_reason"]
+
+
+def test_run_003_false_matches_produce_zero_identity_records() -> None:
+    collector = LiveVendorIdentityCollector(
+        serp=FakeSERP(
+            responses=[
+                [
+                    {
+                        "title": (
+                            "Business Trading Name Register in Namibia – "
+                            "Easy Guide"
+                        ),
+                        "url": (
+                            "https://www.linkedin.com/posts/example_"
+                            "business-trading-name-register-activity-123"
+                        ),
+                        "snippet": "General business-name guidance.",
+                    }
+                ],
+                [
+                    {
+                        "title": (
+                            "ABC Box - Overview, News & Similar companies"
+                        ),
+                        "url": (
+                            "https://www.zoominfo.com/c/"
+                            "abc-box-co/530495"
+                        ),
+                        "snippet": "ABC Box company profile.",
+                    }
+                ],
+            ]
+        ),
+        mcp=FakeMCP(results=[]),
+    )
+
+    batch = asyncio.run(collector.collect(_request()))
+
+    assert batch.records == ()
+    assert batch.accepted_results == ()
+    assert batch.directory_leads == ()

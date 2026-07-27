@@ -302,6 +302,7 @@ class IdentityEvidenceBatch:
     started_at: str | None = None
     completed_at: str | None = None
     accepted_results: tuple[dict[str, str], ...] = ()
+    directory_leads: tuple[dict[str, str], ...] = ()
     rejected_results: tuple[dict[str, str], ...] = ()
 
 
@@ -435,6 +436,96 @@ def _domain_company_similarity(
     return overlap / len(
         company_tokens
     )
+
+
+
+DIRECTORY_NON_PROFILE_PATH_MARKERS = (
+    "/posts/",
+    "/activity/",
+    "/pulse/",
+    "/feed/update/",
+    "/articles/",
+    "/article/",
+    "/blog/",
+    "/news/",
+)
+
+DIRECTORY_PROFILE_PATH_PREFIXES = {
+    "linkedin.com": ("/company/",),
+    "crunchbase.com": ("/organization/",),
+    "zoominfo.com": ("/c/",),
+    "pitchbook.com": ("/profiles/company/",),
+    "opencorporates.com": ("/companies/",),
+    "dnb.com": ("/business-directory/company-profiles.",),
+    "thecompanycheck.com": ("/company/",),
+    "tracxn.com": ("/d/companies/",),
+    "owler.com": ("/company/",),
+    "ibphub.com": ("/company/",),
+}
+
+
+def _title_supports_requested_name(
+    requested_name: str,
+    title: str,
+) -> bool:
+    """Require the title itself to support the requested entity name."""
+    requested_tokens = _company_tokens(requested_name)
+    title_tokens = set(_normalize_text(title).split())
+
+    if not requested_tokens or not title_tokens:
+        return False
+
+    return requested_tokens.issubset(title_tokens)
+
+
+def _directory_profile_allowed(url: str) -> bool:
+    """Allow only actual company-profile paths, never posts or articles."""
+    parsed = urlparse(url)
+    domain = parsed.netloc.lower().removeprefix("www.")
+    path = parsed.path.lower()
+
+    if any(marker in path for marker in DIRECTORY_NON_PROFILE_PATH_MARKERS):
+        return False
+
+    for known_domain, prefixes in DIRECTORY_PROFILE_PATH_PREFIXES.items():
+        if domain == known_domain or domain.endswith("." + known_domain):
+            return any(path.startswith(prefix) for prefix in prefixes)
+
+    return False
+
+
+def _supported_legal_name(
+    requested_name: str,
+    title: str,
+) -> str | None:
+    """Extract a name only when the source title explicitly supports it."""
+    cleaned_title = _clean(title)
+
+    if not cleaned_title:
+        return None
+
+    requested_tokens = _company_tokens(requested_name)
+    candidates = [cleaned_title]
+
+    for separator in TITLE_SEPARATORS:
+        if separator in cleaned_title:
+            candidates.extend(
+                part.strip()
+                for part in cleaned_title.split(separator)
+                if part.strip()
+            )
+
+    for candidate in candidates:
+        candidate_tokens = set(_normalize_text(candidate).split())
+
+        if (
+            requested_tokens
+            and requested_tokens.issubset(candidate_tokens)
+            and 2 <= len(candidate) <= 120
+        ):
+            return candidate
+
+    return None
 
 
 def _is_rejected_page_type(
@@ -653,6 +744,8 @@ def classify_identity_source(
         or domain.endswith("." + item)
         for item in BUSINESS_DIRECTORY_DOMAINS
     ):
+        if not _directory_profile_allowed(url):
+            return "SOCIAL"
         return "REPUTABLE_BUSINESS_DIRECTORY"
 
     if any(
@@ -698,65 +791,28 @@ def _result_is_relevant(
     url: str,
     requested_website_domain: str | None,
 ) -> bool:
+    del snippet
+
     if requested_website_domain and _registered_domain_matches(
         _domain(url),
         requested_website_domain,
     ):
         return True
 
-    combined = _normalize_text(
-        f"{title} {snippet}"
+    return _title_supports_requested_name(
+        requested_name,
+        title,
     )
-    requested = _normalize_text(
-        requested_name
-    )
-
-    if not requested:
-        return False
-
-    return requested in combined
 
 
 def _extract_legal_name(
     requested_name: str,
     title: str,
-) -> str:
-    cleaned_title = _clean(title)
-
-    if not cleaned_title:
-        return requested_name
-
-    requested_normalized = _normalize_text(
-        requested_name
+) -> str | None:
+    return _supported_legal_name(
+        requested_name,
+        title,
     )
-
-    candidates = [
-        cleaned_title,
-    ]
-
-    for separator in TITLE_SEPARATORS:
-        if separator in cleaned_title:
-            candidates.extend(
-                segment.strip()
-                for segment in cleaned_title.split(
-                    separator
-                )
-                if segment.strip()
-            )
-
-    for candidate in candidates:
-        normalized_candidate = _normalize_text(
-            candidate
-        )
-
-        if (
-            requested_normalized
-            and requested_normalized in normalized_candidate
-            and 2 <= len(candidate) <= 120
-        ):
-            return candidate
-
-    return requested_name
 
 
 def _country_from_result(
@@ -875,6 +931,31 @@ def _rejection_reason(
         combined_text=f"{title} {snippet}",
     )
 
+    if (
+        quality != "OFFICIAL_WEBSITE"
+        and not _title_supports_requested_name(
+            request.vendor_name,
+            title,
+        )
+    ):
+        return (
+            "source title does not establish the requested company identity"
+        )
+
+    if quality == "REPUTABLE_BUSINESS_DIRECTORY":
+        if not _directory_profile_allowed(url):
+            return (
+                "directory or social page is not an actual company profile"
+            )
+
+        if _supported_legal_name(
+            request.vendor_name,
+            title,
+        ) is None:
+            return (
+                "directory profile title does not match the requested company"
+            )
+
     if quality == "AUTHORITATIVE_CONTEXT":
         return (
             "authoritative government or regulator context, "
@@ -934,6 +1015,12 @@ def result_to_candidate_evidence(
         request.vendor_name,
         title,
     )
+
+    if (
+        legal_name is None
+        or source_quality == "REPUTABLE_BUSINESS_DIRECTORY"
+    ):
+        return None
 
     candidate_website = (
         url
@@ -1086,6 +1173,7 @@ class LiveVendorIdentityCollector:
 
         records: list[CandidateEvidence] = []
         accepted: list[dict[str, str]] = []
+        directory_leads: list[dict[str, str]] = []
         rejected: list[dict[str, str]] = []
 
         for result in unique_results:
@@ -1105,6 +1193,46 @@ class LiveVendorIdentityCollector:
                                 result.get("title")
                             ),
                             "reason": rejection,
+                        }
+                    )
+                continue
+
+            title = _clean(
+                result.get("title")
+            )
+            url = _clean(
+                result.get("url")
+            )
+            snippet = _clean(
+                result.get("snippet")
+            )
+            requested_domain = _request_website_domain(
+                request.website
+            )
+            source_quality = classify_identity_source(
+                url,
+                requested_name=request.vendor_name,
+                requested_website_domain=requested_domain,
+                combined_text=f"{title} {snippet}",
+            )
+
+            if source_quality == "REPUTABLE_BUSINESS_DIRECTORY":
+                legal_name = _supported_legal_name(
+                    request.vendor_name,
+                    title,
+                )
+
+                if legal_name is not None:
+                    directory_leads.append(
+                        {
+                            "url": url,
+                            "title": title,
+                            "source_quality": "DIRECTORY_LEAD",
+                            "proposed_legal_name": legal_name,
+                            "lead_reason": (
+                                "matching company-directory profile; "
+                                "not used for identity scoring"
+                            ),
                         }
                     )
                 continue
@@ -1151,6 +1279,9 @@ class LiveVendorIdentityCollector:
             completed_at=_utc_now_iso(),
             accepted_results=tuple(
                 accepted
+            ),
+            directory_leads=tuple(
+                directory_leads
             ),
             rejected_results=tuple(
                 rejected

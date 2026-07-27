@@ -294,3 +294,21 @@ def test_authoritative_context_never_creates_candidate() -> None:
     assert result.resolution_status == "MORE_INFORMATION_REQUIRED"
     assert result.selected_candidate is None
     assert result.candidates == ()
+
+
+
+def test_directory_lead_is_ignored_even_if_passed_to_resolver() -> None:
+    result = resolve_vendor_candidates(
+        "ABC Trading",
+        [
+            _record(
+                source_url="https://www.linkedin.com/company/abc-trading",
+                source_quality="DIRECTORY_LEAD",
+                country="Bangladesh",
+            )
+        ],
+    )
+
+    assert result.resolution_status == "MORE_INFORMATION_REQUIRED"
+    assert result.selected_candidate is None
+    assert result.candidates == ()

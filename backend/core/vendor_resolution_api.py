@@ -170,6 +170,25 @@ async def resolve_vendor_identity(
         "accepted_result_count": len(
             evidence_batch.accepted_results
         ),
+        "directory_lead_count": len(
+            evidence_batch.directory_leads
+        ),
+        "directory_leads": [
+            {
+                "url": record.get("url", ""),
+                "title": record.get("title", ""),
+                "source_quality": "DIRECTORY_LEAD",
+                "proposed_legal_name": record.get(
+                    "proposed_legal_name",
+                    "",
+                ),
+                "lead_reason": record.get(
+                    "lead_reason",
+                    "Non-scoring directory lead.",
+                ),
+            }
+            for record in evidence_batch.directory_leads
+        ],
         "accepted_results": [
             {
                 "url": record.get("url", ""),

@@ -500,3 +500,51 @@ def test_accepted_identity_audit_is_safe_and_typed(
     assert "snippet" not in record
     assert "content" not in record
     assert "body" not in record
+
+
+
+def test_directory_leads_are_separate_from_accepted_evidence(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    async def collector(request) -> IdentityEvidenceBatch:
+        del request
+
+        return IdentityEvidenceBatch(
+            records=(),
+            search_performed=True,
+            providers=("Test Identity Provider",),
+            directory_leads=(
+                {
+                    "url": (
+                        "https://www.linkedin.com/company/"
+                        "abc-trading"
+                    ),
+                    "title": "ABC Trading Ltd. - Company Profile",
+                    "source_quality": "DIRECTORY_LEAD",
+                    "proposed_legal_name": "ABC Trading Ltd.",
+                    "lead_reason": (
+                        "matching company-directory profile; "
+                        "not used for identity scoring"
+                    ),
+                },
+            ),
+        )
+
+    monkeypatch.setattr(
+        api_module,
+        "identity_evidence_collector",
+        collector,
+    )
+
+    response = client.post(
+        "/api/vendors/resolve",
+        json={"vendor_name": "ABC Trading"},
+    )
+
+    assert response.status_code == 200
+    search = response.json()["identity_search"]
+    assert search["candidate_evidence_records"] == 0
+    assert search["accepted_result_count"] == 0
+    assert search["directory_lead_count"] == 1
+    assert search["directory_leads"][0]["source_quality"] == "DIRECTORY_LEAD"

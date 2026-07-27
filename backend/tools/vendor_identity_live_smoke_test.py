@@ -514,6 +514,48 @@ def validate_identity_response(
             "Accepted identity result is missing an acceptance reason.",
         )
 
+    directory_leads = search.get(
+        "directory_leads"
+    )
+    directory_lead_count = search.get(
+        "directory_lead_count"
+    )
+    _require(
+        isinstance(directory_leads, list),
+        "directory_leads must be a list.",
+    )
+    _require(
+        isinstance(directory_lead_count, int)
+        and directory_lead_count == len(directory_leads),
+        "directory_lead_count does not match directory_leads.",
+    )
+
+    for lead in directory_leads:
+        _require(
+            isinstance(lead, dict)
+            and set(lead) == {
+                "url",
+                "title",
+                "source_quality",
+                "proposed_legal_name",
+                "lead_reason",
+            },
+            "Directory lead audit contains unsupported fields.",
+        )
+        _require(
+            lead.get("source_quality") == "DIRECTORY_LEAD",
+            "Directory lead has an invalid source class.",
+        )
+
+    _require(
+        all(
+            accepted.get("source_quality")
+            != "REPUTABLE_BUSINESS_DIRECTORY"
+            for accepted in accepted_results
+        ),
+        "A directory result was incorrectly accepted as identity evidence.",
+    )
+
     rejected_results = search.get(
         "rejected_results"
     )
@@ -596,6 +638,7 @@ def validate_identity_response(
         "candidate_count": len(candidates),
         "candidate_evidence_records": record_count,
         "accepted_result_count": accepted_count,
+        "directory_lead_count": directory_lead_count,
         "rejected_result_count": rejected_count,
         "providers": providers,
         "warnings": search.get("warnings", []),

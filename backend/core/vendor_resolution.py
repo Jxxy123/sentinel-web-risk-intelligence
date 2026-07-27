@@ -36,6 +36,13 @@ SOURCE_QUALITY_WEIGHTS = {
     "UNKNOWN": 0.00,
 }
 
+IDENTITY_EVIDENCE_QUALITIES = {
+    "OFFICIAL_WEBSITE",
+    "POSSIBLE_COMPANY_WEBSITE",
+    "AUTHORITATIVE_IDENTITY",
+    "COMPANY_OWNED",
+}
+
 REQUESTED_DETAIL_FIELDS = (
     "country",
     "city",
@@ -638,6 +645,12 @@ def resolve_vendor_candidates(
     ] = {}
 
     for record in evidence:
+        if (
+            str(record.source_quality).upper()
+            not in IDENTITY_EVIDENCE_QUALITIES
+        ):
+            continue
+
         normalized_record = replace(
             record,
             legal_name=normalize_company_name(
