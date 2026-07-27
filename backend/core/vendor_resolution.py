@@ -141,6 +141,22 @@ def _domain(url: str | None) -> str | None:
     return parsed.netloc.lower().removeprefix("www.")
 
 
+def _domain_matches_requested(
+    candidate_domain: str | None,
+    requested_domain: str | None,
+) -> bool:
+    """Match the supplied domain or one of its genuine subdomains."""
+    if not candidate_domain or not requested_domain:
+        return False
+
+    return (
+        candidate_domain == requested_domain
+        or candidate_domain.endswith(
+            "." + requested_domain
+        )
+    )
+
+
 def _candidate_key(evidence: CandidateEvidence) -> str:
     website_domain = _domain(
         evidence.website
@@ -378,15 +394,25 @@ def _merge_group(
             }
         )
     )
+    requested_website_domain = _domain(
+        website
+    )
     unique_domains = {
-        domain
-        for domain in (
+        (
+            requested_website_domain
+            if _domain_matches_requested(
+                source_domain,
+                requested_website_domain,
+            )
+            else source_domain
+        )
+        for source_domain in (
             _domain(
                 record.source_url
             )
             for record in records
         )
-        if domain
+        if source_domain
     }
 
     name_score = _name_similarity(
@@ -422,11 +448,11 @@ def _merge_group(
     normalized_requested_website = _domain(
         website
     )
-    website_matches_user = bool(
-        normalized_requested_website
-        and website_domain
-        and normalized_requested_website
-        == website_domain
+    website_matches_user = (
+        _domain_matches_requested(
+            website_domain,
+            normalized_requested_website,
+        )
     )
 
     if website_matches_user:
@@ -651,11 +677,51 @@ def resolve_vendor_candidates(
         ):
             continue
 
+        normalized_quality = (
+            _clean_optional(
+                record.source_quality
+            )
+            or "UNKNOWN"
+        ).upper()
+        normalized_record_website = (
+            _clean_optional(
+                record.website
+            )
+        )
+        requested_website_domain = _domain(
+            website
+        )
+        record_website_domain = _domain(
+            normalized_record_website
+        )
+
+        if (
+            normalized_quality == "OFFICIAL_WEBSITE"
+            and _domain_matches_requested(
+                record_website_domain,
+                requested_website_domain,
+            )
+        ):
+            normalized_record_website = (
+                _clean_optional(website)
+                or normalized_record_website
+            )
+
+        normalized_legal_name = (
+            requested
+            if (
+                normalized_quality == "OFFICIAL_WEBSITE"
+                and normalized_record_website
+                and requested
+            )
+            else normalize_company_name(
+                record.legal_name
+            )
+        )
+
         normalized_record = replace(
             record,
-            legal_name=normalize_company_name(
-                record.legal_name
-            ),
+            legal_name=normalized_legal_name,
             source_url=_clean_optional(
                 record.source_url
             )
@@ -664,15 +730,8 @@ def resolve_vendor_candidates(
                 record.source_title
             )
             or "Untitled public source",
-            source_quality=(
-                _clean_optional(
-                    record.source_quality
-                )
-                or "UNKNOWN"
-            ).upper(),
-            website=_clean_optional(
-                record.website
-            ),
+            source_quality=normalized_quality,
+            website=normalized_record_website,
             country=_clean_optional(
                 record.country
             ),
