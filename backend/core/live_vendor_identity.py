@@ -65,15 +65,91 @@ SEARCH_PLATFORM_DOMAINS = {
     "yahoo.com",
 }
 
-REGISTRY_DOMAIN_MARKERS = (
-    "sec.gov",
-    "business.gov",
-    "registry",
-    "registrar",
-    "commission",
-    "authority",
-    "ministry",
+IDENTITY_REGISTRY_DOMAINS = {
     "companieshouse.gov.uk",
+    "find-and-update.company-information.service.gov.uk",
+}
+
+IDENTITY_REGISTRY_DOMAIN_MARKERS = (
+    "company-register",
+    "companies-register",
+    "business-register",
+    "corporate-register",
+    "corporations",
+    "companyregistry",
+    "businessregistry",
+    "registrar",
+    "registry",
+)
+
+IDENTITY_REGISTRY_PATH_MARKERS = (
+    "/company/",
+    "/companies/",
+    "/entity/",
+    "/entities/",
+    "/corporation/",
+    "/corporations/",
+    "/business/",
+    "/businesses/",
+    "/company-search",
+    "/business-search",
+    "/archives/edgar/data/",
+    "/edgar/browse/",
+)
+
+IDENTITY_REGISTRY_TEXT_MARKERS = (
+    "company registration",
+    "business registration",
+    "corporate registry",
+    "company registry",
+    "registered entity",
+    "registration number",
+    "company number",
+    "corporation number",
+    "entity number",
+    "legal name",
+    "registered office",
+    "incorporation date",
+    "company status",
+    "cik",
+)
+
+GOVERNMENT_CONTEXT_PATH_MARKERS = (
+    "/recall",
+    "/recalls/",
+    "/enforcement/",
+    "/press-release",
+    "/press-releases/",
+    "/warning",
+    "/warnings/",
+    "/advisory",
+    "/advisories/",
+    "/complaint",
+    "/complaints/",
+    "/court/",
+    "/courts/",
+    "/case/",
+    "/cases/",
+    "/investigation",
+    "/investigations/",
+    "/consumer-alert",
+    "/safety-alert",
+)
+
+GOVERNMENT_CONTEXT_TEXT_MARKERS = (
+    "product recall",
+    "recall notice",
+    "safety warning",
+    "consumer warning",
+    "consumer alert",
+    "enforcement action",
+    "civil penalty",
+    "criminal case",
+    "court opinion",
+    "public advisory",
+    "press release",
+    "hazard",
+    "investigation",
 )
 
 INFORMATIONAL_HOST_MARKERS = (
@@ -225,6 +301,7 @@ class IdentityEvidenceBatch:
     queries_executed: tuple[str, ...] = ()
     started_at: str | None = None
     completed_at: str | None = None
+    accepted_results: tuple[dict[str, str], ...] = ()
     rejected_results: tuple[dict[str, str], ...] = ()
 
 
@@ -395,6 +472,87 @@ def _looks_like_company_page(
     )
 
 
+def _is_government_or_registry_domain(domain: str) -> bool:
+    return (
+        domain.endswith(".gov")
+        or ".gov." in domain
+        or domain.endswith(".europa.eu")
+        or domain in IDENTITY_REGISTRY_DOMAINS
+        or any(
+            marker in domain
+            for marker in IDENTITY_REGISTRY_DOMAIN_MARKERS
+        )
+    )
+
+
+def _classify_government_source(
+    url: str,
+    combined_text: str,
+) -> str | None:
+    """Separate corporate identity records from government context pages."""
+    domain = _domain(url)
+
+    if not _is_government_or_registry_domain(domain):
+        return None
+
+    path = urlparse(url).path.lower()
+    normalized_text = combined_text.lower()
+
+    if (
+        any(marker in path for marker in GOVERNMENT_CONTEXT_PATH_MARKERS)
+        or any(
+            marker in normalized_text
+            for marker in GOVERNMENT_CONTEXT_TEXT_MARKERS
+        )
+    ):
+        return "AUTHORITATIVE_CONTEXT"
+
+    identity_domain = (
+        domain in IDENTITY_REGISTRY_DOMAINS
+        or any(
+            marker in domain
+            for marker in IDENTITY_REGISTRY_DOMAIN_MARKERS
+        )
+    )
+    identity_path = any(
+        marker in path
+        for marker in IDENTITY_REGISTRY_PATH_MARKERS
+    )
+    identity_text = any(
+        marker in normalized_text
+        for marker in IDENTITY_REGISTRY_TEXT_MARKERS
+    )
+
+    if identity_domain and (identity_path or identity_text):
+        return "AUTHORITATIVE_IDENTITY"
+
+    if domain == "sec.gov" or domain.endswith(".sec.gov"):
+        if identity_path or identity_text:
+            return "AUTHORITATIVE_IDENTITY"
+
+    return "AUTHORITATIVE_CONTEXT"
+
+
+def _acceptance_reason(source_quality: str) -> str:
+    reasons = {
+        "OFFICIAL_WEBSITE": "user-provided domain matches the result",
+        "POSSIBLE_COMPANY_WEBSITE": (
+            "company name aligns with a plausible company-owned domain"
+        ),
+        "AUTHORITATIVE_IDENTITY": (
+            "government or corporate registry identity record"
+        ),
+        "REPUTABLE_BUSINESS_DIRECTORY": (
+            "reputable business-directory identity lead"
+        ),
+    }
+
+    return reasons.get(
+        source_quality,
+        "accepted by conservative identity-source controls",
+    )
+
+
 def build_identity_queries(
     request: VendorResolutionRequestLike,
 ) -> tuple[str, str, str]:
@@ -475,16 +633,13 @@ def classify_identity_source(
     ):
         return "OFFICIAL_WEBSITE"
 
-    if (
-        domain.endswith(".gov")
-        or ".gov." in domain
-        or domain.endswith(".europa.eu")
-        or any(
-            marker in domain
-            for marker in REGISTRY_DOMAIN_MARKERS
-        )
-    ):
-        return "AUTHORITATIVE"
+    government_quality = _classify_government_source(
+        url,
+        combined_text,
+    )
+
+    if government_quality:
+        return government_quality
 
     if any(
         domain == item
@@ -720,6 +875,12 @@ def _rejection_reason(
         combined_text=f"{title} {snippet}",
     )
 
+    if quality == "AUTHORITATIVE_CONTEXT":
+        return (
+            "authoritative government or regulator context, "
+            "not a corporate identity record"
+        )
+
     if quality in {
         "SOCIAL",
         "REPUTABLE_NEWS",
@@ -924,6 +1085,7 @@ class LiveVendorIdentityCollector:
             )
 
         records: list[CandidateEvidence] = []
+        accepted: list[dict[str, str]] = []
         rejected: list[dict[str, str]] = []
 
         for result in unique_results:
@@ -956,6 +1118,17 @@ class LiveVendorIdentityCollector:
                 records.append(
                     record
                 )
+                accepted.append(
+                    {
+                        "url": record.source_url,
+                        "title": record.source_title,
+                        "source_quality": record.source_quality,
+                        "proposed_legal_name": record.legal_name,
+                        "acceptance_reason": _acceptance_reason(
+                            record.source_quality
+                        ),
+                    }
+                )
 
             if len(records) >= MAX_IDENTITY_RECORDS:
                 break
@@ -976,6 +1149,9 @@ class LiveVendorIdentityCollector:
             queries_executed=queries,
             started_at=started_at,
             completed_at=_utc_now_iso(),
+            accepted_results=tuple(
+                accepted
+            ),
             rejected_results=tuple(
                 rejected
             ),
