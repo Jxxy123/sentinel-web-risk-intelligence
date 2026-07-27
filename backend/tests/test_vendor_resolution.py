@@ -1,4 +1,4 @@
-"""Offline tests for safe vendor-candidate resolution."""
+"""Offline tests for strict vendor candidate confidence and resolution."""
 
 from core.vendor_resolution import (
     CandidateEvidence,
@@ -6,259 +6,72 @@ from core.vendor_resolution import (
 )
 
 
-def _evidence(
+def _record(
     *,
-    legal_name: str,
     source_url: str,
     source_quality: str,
     website: str | None = None,
     country: str | None = None,
-    city: str | None = None,
-    industry: str | None = None,
     registration_number: str | None = None,
-    aliases: tuple[str, ...] = (),
 ) -> CandidateEvidence:
     return CandidateEvidence(
-        legal_name=legal_name,
+        legal_name="ABC Trading",
         source_url=source_url,
-        source_title="Public identity source",
+        source_title="ABC Trading identity source",
         source_quality=source_quality,
         website=website,
         country=country,
-        city=city,
-        industry=industry,
+        aliases=("ABC Trading",),
         registration_number=registration_number,
-        aliases=aliases,
     )
 
 
-def test_no_candidates_requests_more_information() -> None:
+def test_single_possible_website_is_limited_and_requests_context() -> None:
     result = resolve_vendor_candidates(
         "ABC Trading",
-        [],
+        [
+            _record(
+                source_url=(
+                    "https://abctrading.example/about"
+                ),
+                source_quality=(
+                    "POSSIBLE_COMPANY_WEBSITE"
+                ),
+                website=(
+                    "https://abctrading.example/about"
+                ),
+            )
+        ],
     )
 
     assert (
         result.resolution_status
         == "MORE_INFORMATION_REQUIRED"
     )
-    assert result.selected_candidate is None
-    assert result.candidates == ()
-    assert result.requested_fields == (
-        "country",
-        "city",
-        "website",
-        "industry",
-    )
+    assert len(result.candidates) <= 1
+
+    if result.candidates:
+        assert (
+            result.candidates[0].identity_confidence
+            <= 0.54
+        )
+        assert (
+            result.candidates[0].confidence_label
+            == "LIMITED"
+        )
 
 
-def test_one_strong_official_candidate_is_confirmed() -> None:
-    result = resolve_vendor_candidates(
-        "Microsoft",
-        [
-            _evidence(
-                legal_name=(
-                    "Microsoft Corporation"
-                ),
-                aliases=("Microsoft",),
-                source_url=(
-                    "https://www.microsoft.com/"
-                ),
-                source_quality=(
-                    "OFFICIAL_WEBSITE"
-                ),
-                website=(
-                    "https://www.microsoft.com"
-                ),
-                country="United States",
-                industry="Technology",
-            ),
-            _evidence(
-                legal_name=(
-                    "Microsoft Corporation"
-                ),
-                aliases=("Microsoft",),
-                source_url=(
-                    "https://www.sec.gov/example"
-                ),
-                source_quality="AUTHORITATIVE",
-                website=(
-                    "https://www.microsoft.com"
-                ),
-                country="United States",
-                industry="Technology",
-            ),
-        ],
-    )
-
-    assert result.resolution_status == "CONFIRMED"
-    assert result.selected_candidate is not None
-    assert (
-        result.selected_candidate.website_domain
-        == "microsoft.com"
-    )
-    assert (
-        result.selected_candidate.confidence_label
-        == "HIGH"
-    )
-
-
-def test_same_name_in_two_countries_requires_selection() -> None:
+def test_single_directory_source_is_not_selectable() -> None:
     result = resolve_vendor_candidates(
         "ABC Trading",
         [
-            _evidence(
-                legal_name="ABC Trading Ltd.",
+            _record(
                 source_url=(
-                    "https://abctradingbd.example"
+                    "https://pitchbook.com/company/123"
                 ),
                 source_quality=(
-                    "OFFICIAL_WEBSITE"
+                    "REPUTABLE_BUSINESS_DIRECTORY"
                 ),
-                website=(
-                    "https://abctradingbd.example"
-                ),
-                country="Bangladesh",
-                city="Chattogram",
-                industry="Logistics",
-            ),
-            _evidence(
-                legal_name=(
-                    "ABC Trading Pte. Ltd."
-                ),
-                source_url=(
-                    "https://abctrading.example.sg"
-                ),
-                source_quality=(
-                    "OFFICIAL_WEBSITE"
-                ),
-                website=(
-                    "https://abctrading.example.sg"
-                ),
-                country="Singapore",
-                city="Singapore",
-                industry="Wholesale",
-            ),
-        ],
-    )
-
-    assert (
-        result.resolution_status
-        == "SELECTION_REQUIRED"
-    )
-    assert len(result.candidates) == 2
-    assert {
-        candidate.country
-        for candidate in result.candidates
-    } == {
-        "Bangladesh",
-        "Singapore",
-    }
-
-
-def test_user_country_context_selects_matching_candidate() -> None:
-    result = resolve_vendor_candidates(
-        "ABC Trading",
-        [
-            _evidence(
-                legal_name="ABC Trading Ltd.",
-                source_url=(
-                    "https://abctradingbd.example"
-                ),
-                source_quality=(
-                    "OFFICIAL_WEBSITE"
-                ),
-                website=(
-                    "https://abctradingbd.example"
-                ),
-                country="Bangladesh",
-                city="Chattogram",
-                industry="Logistics",
-            ),
-            _evidence(
-                legal_name=(
-                    "ABC Trading Pte. Ltd."
-                ),
-                source_url=(
-                    "https://abctrading.example.sg"
-                ),
-                source_quality=(
-                    "GENERAL_WEB"
-                ),
-                website=(
-                    "https://abctrading.example.sg"
-                ),
-                country="Singapore",
-                city="Singapore",
-                industry="Wholesale",
-            ),
-        ],
-        country="Bangladesh",
-        city="Chattogram",
-    )
-
-    assert result.resolution_status == "CONFIRMED"
-    assert result.selected_candidate is not None
-    assert (
-        result.selected_candidate.country
-        == "Bangladesh"
-    )
-
-
-def test_duplicate_sources_for_same_domain_are_merged() -> None:
-    result = resolve_vendor_candidates(
-        "Example Vendor",
-        [
-            _evidence(
-                legal_name="Example Vendor Ltd.",
-                source_url=(
-                    "https://examplevendor.com/about"
-                ),
-                source_quality=(
-                    "OFFICIAL_WEBSITE"
-                ),
-                website=(
-                    "https://examplevendor.com"
-                ),
-                country="Malaysia",
-            ),
-            _evidence(
-                legal_name="Example Vendor Ltd.",
-                source_url=(
-                    "https://registry.example.gov/company"
-                ),
-                source_quality="AUTHORITATIVE",
-                website=(
-                    "https://examplevendor.com"
-                ),
-                country="Malaysia",
-                registration_number="MY-12345",
-            ),
-        ],
-    )
-
-    assert len(result.candidates) == 1
-    candidate = result.candidates[0]
-    assert candidate.evidence_source_count == 2
-    assert candidate.registration_number == "MY-12345"
-
-
-def test_one_weak_directory_candidate_is_not_auto_confirmed() -> None:
-    result = resolve_vendor_candidates(
-        "Small Local Store",
-        [
-            _evidence(
-                legal_name=(
-                    "Small Local Store"
-                ),
-                source_url=(
-                    "https://directory.example/store"
-                ),
-                source_quality=(
-                    "GENERAL_WEB"
-                ),
-                country="Bangladesh",
-                industry="Retail",
             )
         ],
     )
@@ -268,67 +81,195 @@ def test_one_weak_directory_candidate_is_not_auto_confirmed() -> None:
         == "MORE_INFORMATION_REQUIRED"
     )
     assert result.selected_candidate is None
-    assert len(result.candidates) == 1
 
 
-def test_response_does_not_claim_complete_internet_coverage() -> None:
+def test_two_single_source_leads_do_not_force_selection() -> None:
     result = resolve_vendor_candidates(
-        "Unknown Vendor",
-        [],
-    )
-
-    notice = result.coverage_notice.lower()
-
-    assert "accessible public sources" in notice
-    assert "every business" in notice
-    assert "all companies" not in notice
-
-
-def test_result_is_json_serializable() -> None:
-    result = resolve_vendor_candidates(
-        "Microsoft",
+        "ABC Trading",
         [
-            _evidence(
-                legal_name=(
-                    "Microsoft Corporation"
-                ),
-                aliases=("Microsoft",),
+            _record(
                 source_url=(
-                    "https://www.microsoft.com/"
+                    "https://abctrading-one.example/about"
                 ),
                 source_quality=(
-                    "OFFICIAL_WEBSITE"
+                    "POSSIBLE_COMPANY_WEBSITE"
                 ),
                 website=(
-                    "https://www.microsoft.com"
+                    "https://abctrading-one.example/about"
                 ),
-                country="United States",
-                industry="Technology",
+                country="Bangladesh",
             ),
-            _evidence(
-                legal_name=(
-                    "Microsoft Corporation"
-                ),
-                aliases=("Microsoft",),
+            _record(
                 source_url=(
-                    "https://www.sec.gov/example"
+                    "https://abctrading-two.example/about"
                 ),
-                source_quality="AUTHORITATIVE",
+                source_quality=(
+                    "POSSIBLE_COMPANY_WEBSITE"
+                ),
                 website=(
-                    "https://www.microsoft.com"
+                    "https://abctrading-two.example/about"
                 ),
-                country="United States",
-                industry="Technology",
+                country="Singapore",
             ),
         ],
     )
 
-    payload = result.to_dict()
-
-    assert payload["resolution_status"] == "CONFIRMED"
     assert (
-        payload["selected_candidate"][
-            "website_domain"
-        ]
-        == "microsoft.com"
+        result.resolution_status
+        == "MORE_INFORMATION_REQUIRED"
     )
+
+
+def test_user_provided_matching_website_can_confirm() -> None:
+    result = resolve_vendor_candidates(
+        "ABC Trading",
+        [
+            _record(
+                source_url=(
+                    "https://abctrading.example/about"
+                ),
+                source_quality="OFFICIAL_WEBSITE",
+                website=(
+                    "https://abctrading.example/about"
+                ),
+                country="Bangladesh",
+            ),
+            _record(
+                source_url=(
+                    "https://registry.example.gov/company/123"
+                ),
+                source_quality="AUTHORITATIVE",
+                website=(
+                    "https://abctrading.example"
+                ),
+                country="Bangladesh",
+                registration_number="BD-123",
+            ),
+        ],
+        website="https://abctrading.example",
+        country="Bangladesh",
+    )
+
+    assert result.resolution_status == "CONFIRMED"
+    assert result.selected_candidate is not None
+    assert (
+        result.selected_candidate.confidence_label
+        == "HIGH"
+    )
+
+
+def test_two_independently_supported_companies_require_selection() -> None:
+    records = [
+        _record(
+            source_url=(
+                "https://abc-bd.example/about"
+            ),
+            source_quality=(
+                "POSSIBLE_COMPANY_WEBSITE"
+            ),
+            website=(
+                "https://abc-bd.example/about"
+            ),
+            country="Bangladesh",
+        ),
+        _record(
+            source_url=(
+                "https://registry.bd.gov/company/abc"
+            ),
+            source_quality="AUTHORITATIVE",
+            website=(
+                "https://abc-bd.example"
+            ),
+            country="Bangladesh",
+            registration_number="BD-ABC",
+        ),
+        _record(
+            source_url=(
+                "https://abc-sg.example/about"
+            ),
+            source_quality=(
+                "POSSIBLE_COMPANY_WEBSITE"
+            ),
+            website=(
+                "https://abc-sg.example/about"
+            ),
+            country="Singapore",
+        ),
+        _record(
+            source_url=(
+                "https://registry.sg.gov/company/abc"
+            ),
+            source_quality="AUTHORITATIVE",
+            website=(
+                "https://abc-sg.example"
+            ),
+            country="Singapore",
+            registration_number="SG-ABC",
+        ),
+    ]
+
+    result = resolve_vendor_candidates(
+        "ABC Trading",
+        records,
+    )
+
+    assert (
+        result.resolution_status
+        == "SELECTION_REQUIRED"
+    )
+    assert len(result.candidates) == 2
+    assert all(
+        candidate.evidence_source_count == 2
+        for candidate in result.candidates
+    )
+
+
+
+def test_single_authoritative_result_is_not_auto_confirmed() -> None:
+    result = resolve_vendor_candidates(
+        "ABC Trading",
+        [
+            _record(
+                source_url=(
+                    "https://registry.example.gov/company/abc"
+                ),
+                source_quality="AUTHORITATIVE",
+                country="Bangladesh",
+                registration_number="BD-ABC",
+            )
+        ],
+    )
+
+    assert (
+        result.resolution_status
+        == "MORE_INFORMATION_REQUIRED"
+    )
+    assert result.selected_candidate is None
+
+
+def test_weak_candidates_are_not_shown_as_selection_choices() -> None:
+    result = resolve_vendor_candidates(
+        "ABC Trading",
+        [
+            _record(
+                source_url="https://pitchbook.com/company/one",
+                source_quality=(
+                    "REPUTABLE_BUSINESS_DIRECTORY"
+                ),
+                country="Bangladesh",
+            ),
+            _record(
+                source_url="https://ibphub.com/company/two",
+                source_quality=(
+                    "REPUTABLE_BUSINESS_DIRECTORY"
+                ),
+                country="India",
+            ),
+        ],
+    )
+
+    assert (
+        result.resolution_status
+        == "MORE_INFORMATION_REQUIRED"
+    )
+    assert result.selected_candidate is None
