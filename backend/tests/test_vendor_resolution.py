@@ -312,3 +312,79 @@ def test_directory_lead_is_ignored_even_if_passed_to_resolver() -> None:
     assert result.resolution_status == "MORE_INFORMATION_REQUIRED"
     assert result.selected_candidate is None
     assert result.candidates == ()
+
+
+
+def test_official_subdomains_group_under_supplied_domain_and_name() -> None:
+    records = [
+        CandidateEvidence(
+            legal_name="Facts About Microsoft - Stories",
+            source_url=(
+                "https://news.microsoft.com/"
+                "facts-about-microsoft/"
+            ),
+            source_title=(
+                "Facts About Microsoft - Stories"
+            ),
+            source_quality="OFFICIAL_WEBSITE",
+            website=(
+                "https://news.microsoft.com/"
+                "facts-about-microsoft/"
+            ),
+            country=None,
+            industry=None,
+            aliases=("Microsoft",),
+        ),
+        CandidateEvidence(
+            legal_name=(
+                "Microsoft Trademark and Brand Guidelines"
+            ),
+            source_url=(
+                "https://www.microsoft.com/en-us/legal/"
+                "intellectualproperty/trademarks"
+            ),
+            source_title=(
+                "Microsoft Trademark and Brand Guidelines"
+            ),
+            source_quality="OFFICIAL_WEBSITE",
+            website=(
+                "https://www.microsoft.com/en-us/legal/"
+                "intellectualproperty/trademarks"
+            ),
+            country=None,
+            industry=None,
+            aliases=("Microsoft",),
+        ),
+    ]
+
+    result = resolve_vendor_candidates(
+        "Microsoft",
+        records,
+        website="https://www.microsoft.com",
+        country="United States",
+        industry="Technology",
+    )
+
+    assert result.resolution_status == "CONFIRMED"
+    assert result.selected_candidate is not None
+    assert (
+        result.selected_candidate.legal_name
+        == "Microsoft"
+    )
+    assert (
+        result.selected_candidate.website_domain
+        == "microsoft.com"
+    )
+    assert (
+        result.selected_candidate.evidence_source_count
+        == 2
+    )
+    assert (
+        "Supported by independent public sources"
+        not in result.selected_candidate.match_reasons
+    )
+    assert (
+        result.selected_candidate.identity_confidence
+        == 0.90
+    )
+    assert len(result.candidates) == 1
