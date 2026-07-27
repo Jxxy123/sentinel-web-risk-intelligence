@@ -86,6 +86,8 @@ def test_controlled_collector_does_not_claim_live_search(
     assert payload["resolution_status"] == "MORE_INFORMATION_REQUIRED"
     assert payload["identity_search"]["search_performed"] is False
     assert payload["identity_search"]["providers"] == []
+    assert payload["identity_search"]["rejected_result_count"] == 0
+    assert payload["identity_search"]["rejected_results"] == []
     assert payload["identity_search"]["risk_scoring_started"] is False
     assert payload["identity_search"]["llm_used"] is False
 
@@ -360,3 +362,70 @@ def test_resolution_endpoint_never_returns_job_or_risk_fields(
     assert "risk_score" not in payload
     assert "risk_level" not in payload
     assert "report" not in payload
+
+
+
+def test_rejected_identity_results_are_exposed_without_raw_content(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    async def collector(request) -> IdentityEvidenceBatch:
+        del request
+
+        return IdentityEvidenceBatch(
+            records=(),
+            search_performed=True,
+            providers=("Test Identity Provider",),
+            rejected_results=(
+                {
+                    "url": (
+                        "https://example.com/download/"
+                        "company-guide.pdf"
+                    ),
+                    "title": "ABC Trading company guide",
+                    "reason": (
+                        "informational PDF or downloadable document"
+                    ),
+                },
+                {
+                    "url": (
+                        "https://example.com/blog/"
+                        "trading-names"
+                    ),
+                    "title": "Trading names article",
+                    "reason": "article, blog, or news page",
+                },
+            ),
+        )
+
+    monkeypatch.setattr(
+        api_module,
+        "identity_evidence_collector",
+        collector,
+    )
+
+    response = client.post(
+        "/api/vendors/resolve",
+        json={"vendor_name": "ABC Trading"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    search = payload["identity_search"]
+
+    assert search["rejected_result_count"] == 2
+    assert len(search["rejected_results"]) == 2
+
+    for record in search["rejected_results"]:
+        assert set(record) == {
+            "url",
+            "title",
+            "reason",
+        }
+        assert record["url"].startswith(
+            "https://"
+        )
+        assert record["reason"]
+        assert "content" not in record
+        assert "snippet" not in record
+        assert "body" not in record
