@@ -23,7 +23,8 @@ AUTO_CONFIRM_MARGIN = 0.18
 PLAUSIBLE_CANDIDATE_THRESHOLD = 0.55
 
 SOURCE_QUALITY_WEIGHTS = {
-    "AUTHORITATIVE": 0.24,
+    "AUTHORITATIVE_IDENTITY": 0.24,
+    "AUTHORITATIVE_CONTEXT": 0.00,
     "OFFICIAL_WEBSITE": 0.26,
     "POSSIBLE_COMPANY_WEBSITE": 0.10,
     "COMPANY_OWNED": 0.20,
@@ -358,6 +359,9 @@ def _merge_group(
         record.source_quality.upper()
         for record in records
     }
+    identity_quality_values = quality_values - {
+        "AUTHORITATIVE_CONTEXT",
+    }
     unique_evidence_urls = tuple(
         sorted(
             {
@@ -389,7 +393,7 @@ def _merge_group(
                 quality,
                 0.0,
             )
-            for quality in quality_values
+            for quality in identity_quality_values
         ),
         default=0.0,
     )
@@ -424,10 +428,10 @@ def _merge_group(
             "Website matches user-provided domain"
         )
 
-    if "AUTHORITATIVE" in quality_values:
+    if "AUTHORITATIVE_IDENTITY" in quality_values:
         confidence += 0.12
         match_reasons.append(
-            "Government or registry evidence"
+            "Government or corporate registry identity evidence"
         )
 
     if registration_number:
@@ -512,7 +516,7 @@ def _merge_group(
         )
 
     has_authoritative_corroboration = (
-        "AUTHORITATIVE" in quality_values
+        "AUTHORITATIVE_IDENTITY" in quality_values
         and (
             len(unique_domains) >= 2
             or website_matches_user
@@ -532,7 +536,7 @@ def _merge_group(
     if (
         len(unique_domains) <= 1
         and not website_matches_user
-        and "AUTHORITATIVE"
+        and "AUTHORITATIVE_IDENTITY"
         not in quality_values
     ):
         confidence = min(
@@ -757,7 +761,7 @@ def resolve_vendor_candidates(
         "Website matches user-provided domain"
         in top.match_reasons
         or (
-            "AUTHORITATIVE"
+            "AUTHORITATIVE_IDENTITY"
             in top.source_quality_labels
             and top.evidence_source_count >= 2
         )
