@@ -1,0 +1,178 @@
+name: Vendor Identity Runtime Smoke Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      vendor_name:
+        description: Vendor or company name
+        required: true
+        type: string
+      website:
+        description: User-supplied official website (optional)
+        required: false
+        type: string
+      country:
+        description: Country context (optional)
+        required: false
+        type: string
+      city:
+        description: City context (optional)
+        required: false
+        type: string
+      industry:
+        description: Industry context (optional)
+        required: false
+        type: string
+      language:
+        description: Search language
+        required: true
+        default: EN
+        type: string
+      expected_status:
+        description: Expected safe resolution state
+        required: true
+        default: ANY_SAFE
+        type: choice
+        options:
+          - ANY_SAFE
+          - CONFIRMED
+          - MORE_INFORMATION_REQUIRED
+          - SELECTION_REQUIRED
+      minimum_confidence:
+        description: Minimum confidence required for CONFIRMED
+        required: true
+        default: "0.90"
+        type: string
+      require_official_website:
+        description: Require OFFICIAL_WEBSITE evidence from the supplied domain
+        required: true
+        default: false
+        type: boolean
+      require_zero_authenticated_evidence:
+        description: Require zero accepted identity records
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vendor-identity-runtime-smoke
+  cancel-in-progress: false
+
+jobs:
+  runtime-identity-smoke:
+    name: Runtime Vendor Identity Resolution
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      PYTHONPATH: .
+      EXECUTION_MODE: real
+
+      IDENTITY_RUNTIME_VENDOR_NAME: ${{ inputs.vendor_name }}
+      IDENTITY_RUNTIME_WEBSITE: ${{ inputs.website }}
+      IDENTITY_RUNTIME_COUNTRY: ${{ inputs.country }}
+      IDENTITY_RUNTIME_CITY: ${{ inputs.city }}
+      IDENTITY_RUNTIME_INDUSTRY: ${{ inputs.industry }}
+      IDENTITY_RUNTIME_LANGUAGE: ${{ inputs.language }}
+      IDENTITY_RUNTIME_EXPECTED_STATUS: ${{ inputs.expected_status }}
+      IDENTITY_RUNTIME_MINIMUM_CONFIDENCE: ${{ inputs.minimum_confidence }}
+      IDENTITY_RUNTIME_REQUIRE_OFFICIAL_WEBSITE: ${{ inputs.require_official_website }}
+      IDENTITY_RUNTIME_REQUIRE_ZERO_EVIDENCE: ${{ inputs.require_zero_authenticated_evidence }}
+
+      BRIGHT_DATA_API_KEY: ${{ secrets.BRIGHT_DATA_API_KEY }}
+      BRIGHT_DATA_SERP_ZONE: ${{ vars.BRIGHT_DATA_SERP_ZONE }}
+      BRIGHT_DATA_MCP_BASE_URL: ${{ vars.BRIGHT_DATA_MCP_BASE_URL || 'https://mcp.brightdata.com/mcp' }}
+      BRIGHT_DATA_MCP_TOOLS: ${{ vars.BRIGHT_DATA_MCP_TOOLS }}
+      BRIGHT_DATA_MCP_UNLOCKER_ZONE: ${{ vars.BRIGHT_DATA_MCP_UNLOCKER_ZONE }}
+      BRIGHT_DATA_MCP_PRO: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify protected live-search configuration
+        run: |
+          python - <<'PY'
+          import os
+
+          api_key = os.getenv("BRIGHT_DATA_API_KEY", "").strip()
+          serp_zone = os.getenv("BRIGHT_DATA_SERP_ZONE", "").strip()
+          mcp_base_url = os.getenv(
+              "BRIGHT_DATA_MCP_BASE_URL",
+              "",
+          ).strip()
+          mcp_tools = {
+              item.strip()
+              for item in os.getenv(
+                  "BRIGHT_DATA_MCP_TOOLS",
+                  "",
+              ).split(",")
+              if item.strip()
+          }
+
+          missing = []
+
+          if not api_key:
+              missing.append("BRIGHT_DATA_API_KEY")
+          if not serp_zone:
+              missing.append("BRIGHT_DATA_SERP_ZONE")
+          if not mcp_base_url:
+              missing.append("BRIGHT_DATA_MCP_BASE_URL")
+          if "search_engine" not in mcp_tools:
+              missing.append(
+                  "search_engine in BRIGHT_DATA_MCP_TOOLS"
+              )
+
+          if missing:
+              raise SystemExit(
+                  "Missing live identity-search configuration: "
+                  + ", ".join(missing)
+              )
+
+          if "token=" in mcp_base_url.lower():
+              raise SystemExit(
+                  "Do not store an API token inside "
+                  "BRIGHT_DATA_MCP_BASE_URL."
+              )
+
+          print("Protected live-search configuration is present.")
+          print("API token: protected and present")
+          print("Planned SERP searches: 2")
+          print("Planned Remote MCP searches: 1")
+          print("Planned page scrapes: 0")
+          print("Planned LLM calls: 0")
+          print("Planned risk-scoring calls: 0")
+          print("Planned database writes: 0")
+          print("Planned investigation jobs: 0")
+          PY
+
+      - name: Run parameterized identity smoke test
+        run: python tools/vendor_identity_runtime_smoke_test.py
+
+      - name: Upload runtime identity artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vendor-identity-runtime-smoke
+          path: backend/artifacts/vendor_identity_runtime_smoke.json
+          if-no-files-found: error
+          retention-days: 7
