@@ -528,6 +528,32 @@ def _supported_legal_name(
     return None
 
 
+def _canonical_official_name(
+    requested_name: str,
+    title: str,
+) -> str | None:
+    """Use the user-requested company name, never a page/document title.
+
+    A matching user-supplied domain authenticates ownership of the page, while
+    the title only needs to support that the page is about the requested
+    company. It does not prove that the whole page title is a legal name.
+    """
+    cleaned_requested = _clean(
+        requested_name
+    )
+
+    if (
+        not cleaned_requested
+        or not _title_supports_requested_name(
+            cleaned_requested,
+            title,
+        )
+    ):
+        return None
+
+    return cleaned_requested
+
+
 def _is_rejected_page_type(
     url: str,
 ) -> str | None:
@@ -825,8 +851,13 @@ def _country_from_result(
         requested_country
     )
 
-    if requested and requested.lower() in normalized_text:
-        return requested
+    if requested:
+        if requested.lower() in normalized_text:
+            return requested
+
+        # Do not replace user-provided context with a country merely mentioned
+        # by an article, report, regional page, or downloadable document.
+        return None
 
     domain = _domain(url)
     final_label = domain.rsplit(".", 1)[-1]
@@ -865,8 +896,13 @@ def _industry_from_result(
         requested_industry
     )
 
-    if declared and declared.lower() in combined_text.lower():
-        return declared
+    if declared:
+        if declared.lower() in combined_text.lower():
+            return declared
+
+        # Do not overwrite supplied context with an industry inferred from
+        # incidental page content.
+        return None
 
     profile, confidence = infer_industry(
         combined_text
@@ -1011,9 +1047,16 @@ def result_to_candidate_evidence(
         requested_website_domain=requested_domain,
         combined_text=combined_text,
     )
-    legal_name = _extract_legal_name(
-        request.vendor_name,
-        title,
+    legal_name = (
+        _canonical_official_name(
+            request.vendor_name,
+            title,
+        )
+        if source_quality == "OFFICIAL_WEBSITE"
+        else _extract_legal_name(
+            request.vendor_name,
+            title,
+        )
     )
 
     if (
@@ -1022,15 +1065,15 @@ def result_to_candidate_evidence(
     ):
         return None
 
-    candidate_website = (
-        url
-        if source_quality
-        in {
-            "OFFICIAL_WEBSITE",
-            "POSSIBLE_COMPANY_WEBSITE",
-        }
-        else None
-    )
+    if source_quality == "OFFICIAL_WEBSITE":
+        candidate_website = (
+            _clean(request.website)
+            or url
+        )
+    elif source_quality == "POSSIBLE_COMPANY_WEBSITE":
+        candidate_website = url
+    else:
+        candidate_website = None
 
     return CandidateEvidence(
         legal_name=legal_name,
@@ -1217,9 +1260,13 @@ class LiveVendorIdentityCollector:
             )
 
             if source_quality == "REPUTABLE_BUSINESS_DIRECTORY":
-                legal_name = _supported_legal_name(
-                    request.vendor_name,
-                    title,
+                legal_name = (
+                    _clean(request.vendor_name)
+                    if _title_supports_requested_name(
+                        request.vendor_name,
+                        title,
+                    )
+                    else None
                 )
 
                 if legal_name is not None:
