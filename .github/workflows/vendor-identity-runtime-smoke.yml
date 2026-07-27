@@ -1,58 +1,11 @@
 name: Vendor Identity Runtime Smoke Test
 
 on:
-  workflow_dispatch:
-    inputs:
-      vendor_name:
-        description: Vendor or company name
-        required: true
-        type: string
-      website:
-        description: User-supplied official website (optional)
-        required: false
-        type: string
-      country:
-        description: Country context (optional)
-        required: false
-        type: string
-      city:
-        description: City context (optional)
-        required: false
-        type: string
-      industry:
-        description: Industry context (optional)
-        required: false
-        type: string
-      language:
-        description: Search language
-        required: true
-        default: EN
-        type: string
-      expected_status:
-        description: Expected safe resolution state
-        required: true
-        default: ANY_SAFE
-        type: choice
-        options:
-          - ANY_SAFE
-          - CONFIRMED
-          - MORE_INFORMATION_REQUIRED
-          - SELECTION_REQUIRED
-      minimum_confidence:
-        description: Minimum confidence required for CONFIRMED
-        required: true
-        default: "0.90"
-        type: string
-      require_official_website:
-        description: Require OFFICIAL_WEBSITE evidence from the supplied domain
-        required: true
-        default: false
-        type: boolean
-      require_zero_authenticated_evidence:
-        description: Require zero accepted identity records
-        required: true
-        default: false
-        type: boolean
+  push:
+    branches:
+      - testing/enterprise-readiness
+    paths:
+      - backend/tools/run_vendor_identity_runtime_smoke.json
 
 permissions:
   contents: read
@@ -74,17 +27,7 @@ jobs:
     env:
       PYTHONPATH: .
       EXECUTION_MODE: real
-
-      IDENTITY_RUNTIME_VENDOR_NAME: ${{ inputs.vendor_name }}
-      IDENTITY_RUNTIME_WEBSITE: ${{ inputs.website }}
-      IDENTITY_RUNTIME_COUNTRY: ${{ inputs.country }}
-      IDENTITY_RUNTIME_CITY: ${{ inputs.city }}
-      IDENTITY_RUNTIME_INDUSTRY: ${{ inputs.industry }}
-      IDENTITY_RUNTIME_LANGUAGE: ${{ inputs.language }}
-      IDENTITY_RUNTIME_EXPECTED_STATUS: ${{ inputs.expected_status }}
-      IDENTITY_RUNTIME_MINIMUM_CONFIDENCE: ${{ inputs.minimum_confidence }}
-      IDENTITY_RUNTIME_REQUIRE_OFFICIAL_WEBSITE: ${{ inputs.require_official_website }}
-      IDENTITY_RUNTIME_REQUIRE_ZERO_EVIDENCE: ${{ inputs.require_zero_authenticated_evidence }}
+      IDENTITY_RUNTIME_CONFIG_FILE: tools/run_vendor_identity_runtime_smoke.json
 
       BRIGHT_DATA_API_KEY: ${{ secrets.BRIGHT_DATA_API_KEY }}
       BRIGHT_DATA_SERP_ZONE: ${{ vars.BRIGHT_DATA_SERP_ZONE }}
@@ -114,8 +57,14 @@ jobs:
           python - <<'PY'
           import os
 
-          api_key = os.getenv("BRIGHT_DATA_API_KEY", "").strip()
-          serp_zone = os.getenv("BRIGHT_DATA_SERP_ZONE", "").strip()
+          api_key = os.getenv(
+              "BRIGHT_DATA_API_KEY",
+              "",
+          ).strip()
+          serp_zone = os.getenv(
+              "BRIGHT_DATA_SERP_ZONE",
+              "",
+          ).strip()
           mcp_base_url = os.getenv(
               "BRIGHT_DATA_MCP_BASE_URL",
               "",
@@ -132,11 +81,17 @@ jobs:
           missing = []
 
           if not api_key:
-              missing.append("BRIGHT_DATA_API_KEY")
+              missing.append(
+                  "BRIGHT_DATA_API_KEY"
+              )
           if not serp_zone:
-              missing.append("BRIGHT_DATA_SERP_ZONE")
+              missing.append(
+                  "BRIGHT_DATA_SERP_ZONE"
+              )
           if not mcp_base_url:
-              missing.append("BRIGHT_DATA_MCP_BASE_URL")
+              missing.append(
+                  "BRIGHT_DATA_MCP_BASE_URL"
+              )
           if "search_engine" not in mcp_tools:
               missing.append(
                   "search_engine in BRIGHT_DATA_MCP_TOOLS"
@@ -154,8 +109,11 @@ jobs:
                   "BRIGHT_DATA_MCP_BASE_URL."
               )
 
-          print("Protected live-search configuration is present.")
+          print(
+              "Protected live-search configuration is present."
+          )
           print("API token: protected and present")
+          print("Runtime input: repository JSON trigger")
           print("Planned SERP searches: 2")
           print("Planned Remote MCP searches: 1")
           print("Planned page scrapes: 0")
@@ -165,7 +123,7 @@ jobs:
           print("Planned investigation jobs: 0")
           PY
 
-      - name: Run parameterized identity smoke test
+      - name: Run dynamic identity smoke test
         run: python tools/vendor_identity_runtime_smoke_test.py
 
       - name: Upload runtime identity artifact
