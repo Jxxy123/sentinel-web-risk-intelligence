@@ -1,0 +1,12 @@
+{
+  "vendor_name": "Microsoft",
+  "website": "https://www.microsoft.com",
+  "country": "United States",
+  "city": "",
+  "industry": "Technology",
+  "language": "EN",
+  "expected_status": "CONFIRMED",
+  "minimum_confidence": 0.9,
+  "require_official_website": true,
+  "require_zero_authenticated_evidence": false
+}
