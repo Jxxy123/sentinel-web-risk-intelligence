@@ -138,7 +138,7 @@ def test_user_provided_matching_website_can_confirm() -> None:
                 source_url=(
                     "https://registry.example.gov/company/123"
                 ),
-                source_quality="AUTHORITATIVE",
+                source_quality="AUTHORITATIVE_IDENTITY",
                 website=(
                     "https://abctrading.example"
                 ),
@@ -176,7 +176,7 @@ def test_two_independently_supported_companies_require_selection() -> None:
             source_url=(
                 "https://registry.bd.gov/company/abc"
             ),
-            source_quality="AUTHORITATIVE",
+            source_quality="AUTHORITATIVE_IDENTITY",
             website=(
                 "https://abc-bd.example"
             ),
@@ -199,7 +199,7 @@ def test_two_independently_supported_companies_require_selection() -> None:
             source_url=(
                 "https://registry.sg.gov/company/abc"
             ),
-            source_quality="AUTHORITATIVE",
+            source_quality="AUTHORITATIVE_IDENTITY",
             website=(
                 "https://abc-sg.example"
             ),
@@ -233,7 +233,7 @@ def test_single_authoritative_result_is_not_auto_confirmed() -> None:
                 source_url=(
                     "https://registry.example.gov/company/abc"
                 ),
-                source_quality="AUTHORITATIVE",
+                source_quality="AUTHORITATIVE_IDENTITY",
                 country="Bangladesh",
                 registration_number="BD-ABC",
             )
@@ -273,3 +273,24 @@ def test_weak_candidates_are_not_shown_as_selection_choices() -> None:
         == "MORE_INFORMATION_REQUIRED"
     )
     assert result.selected_candidate is None
+
+
+
+def test_authoritative_context_never_creates_candidate() -> None:
+    result = resolve_vendor_candidates(
+        "ABC Trading",
+        [
+            _record(
+                source_url=(
+                    "https://www.cpsc.gov/Recalls/1973/"
+                    "abc-trading-recall"
+                ),
+                source_quality="AUTHORITATIVE_CONTEXT",
+                country="United States",
+            )
+        ],
+    )
+
+    assert result.resolution_status == "MORE_INFORMATION_REQUIRED"
+    assert result.selected_candidate is None
+    assert result.candidates == ()
