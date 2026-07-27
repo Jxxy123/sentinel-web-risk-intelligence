@@ -2,6 +2,8 @@
 
 from tools.vendor_identity_runtime_smoke_test import (
     RuntimeExpectation,
+    build_runtime_request,
+    load_runtime_config,
     validate_runtime_response,
 )
 
@@ -357,3 +359,83 @@ def test_protected_marker_and_risk_field_fail():
         "protected marker" in error
         for error in errors
     )
+
+
+
+def test_runtime_request_loads_dynamic_json(
+    monkeypatch,
+    tmp_path,
+):
+    config_path = (
+        tmp_path
+        / "runtime_identity.json"
+    )
+    config_path.write_text(
+        """{
+  "vendor_name": "Dynamic Example Ltd",
+  "website": "https://dynamic.example",
+  "country": "Example Country",
+  "city": "Example City",
+  "industry": "Technology",
+  "language": "EN",
+  "expected_status": "CONFIRMED",
+  "minimum_confidence": 0.91,
+  "require_official_website": true,
+  "require_zero_authenticated_evidence": false
+}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(
+        "IDENTITY_RUNTIME_CONFIG_FILE",
+        str(config_path),
+    )
+
+    request_body, expectation = (
+        build_runtime_request()
+    )
+
+    assert request_body == {
+        "vendor_name": "Dynamic Example Ltd",
+        "website": "https://dynamic.example",
+        "country": "Example Country",
+        "city": "Example City",
+        "industry": "Technology",
+        "language": "EN",
+    }
+    assert expectation == RuntimeExpectation(
+        expected_status="CONFIRMED",
+        minimum_confidence=0.91,
+        require_official_website=True,
+        require_zero_authenticated_evidence=False,
+    )
+
+
+def test_runtime_config_rejects_unknown_fields(
+    tmp_path,
+):
+    config_path = (
+        tmp_path
+        / "unsafe_runtime_identity.json"
+    )
+    config_path.write_text(
+        """{
+  "vendor_name": "Example",
+  "api_key": "must-not-be-accepted"
+}
+""",
+        encoding="utf-8",
+    )
+
+    try:
+        load_runtime_config(config_path)
+    except ValueError as error:
+        assert (
+            "unsupported fields"
+            in str(error)
+        )
+        assert "api_key" in str(error)
+    else:
+        raise AssertionError(
+            "Unknown runtime fields were accepted."
+        )
