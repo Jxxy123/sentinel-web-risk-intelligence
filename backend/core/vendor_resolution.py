@@ -1,7 +1,7 @@
 """Conservative vendor-candidate resolution for Sentinel Web-Risk.
 
 This module performs no network, LLM, database, or provider calls. It converts
-already-collected public identity evidence into safe candidate-selection states.
+already-collected identity evidence into safe candidate-selection states.
 """
 
 from __future__ import annotations
@@ -12,25 +12,25 @@ from typing import Any, Iterable
 from urllib.parse import urlparse
 
 from core.company_identity import (
-    build_company_identity,
     normalize_company_name,
     normalize_website,
 )
 
 
 MAX_CANDIDATES = 8
-AUTO_CONFIRM_THRESHOLD = 0.85
-AUTO_CONFIRM_MARGIN = 0.15
-PLAUSIBLE_CANDIDATE_THRESHOLD = 0.45
+AUTO_CONFIRM_THRESHOLD = 0.90
+AUTO_CONFIRM_MARGIN = 0.18
+PLAUSIBLE_CANDIDATE_THRESHOLD = 0.55
 
 SOURCE_QUALITY_WEIGHTS = {
-    "AUTHORITATIVE": 0.28,
+    "AUTHORITATIVE": 0.24,
     "OFFICIAL_WEBSITE": 0.26,
-    "COMPANY_OWNED": 0.24,
-    "REPUTABLE_BUSINESS_DIRECTORY": 0.12,
-    "REPUTABLE_NEWS": 0.10,
-    "SPECIALIST": 0.08,
-    "GENERAL_WEB": 0.04,
+    "POSSIBLE_COMPANY_WEBSITE": 0.10,
+    "COMPANY_OWNED": 0.20,
+    "REPUTABLE_BUSINESS_DIRECTORY": 0.08,
+    "REPUTABLE_NEWS": 0.04,
+    "SPECIALIST": 0.05,
+    "GENERAL_WEB": 0.00,
     "SOCIAL": 0.00,
     "UNKNOWN": 0.00,
 }
@@ -97,7 +97,6 @@ class VendorResolutionResult:
     coverage_notice: str
 
     def to_dict(self) -> dict[str, Any]:
-        """Return a JSON-safe response payload."""
         return asdict(self)
 
 
@@ -142,29 +141,28 @@ def _candidate_key(evidence: CandidateEvidence) -> str:
     if website_domain:
         return "domain:" + website_domain
 
-    normalized_name = _normalize_match_text(
-        evidence.legal_name
-    )
-    normalized_country = _normalize_match_text(
-        evidence.country or ""
-    )
     registration = _normalize_match_text(
         evidence.registration_number or ""
+    )
+    country = _normalize_match_text(
+        evidence.country or ""
     )
 
     if registration:
         return (
             "registration:"
-            + normalized_country
+            + country
             + ":"
             + registration
         )
 
     return (
         "name:"
-        + normalized_name
+        + _normalize_match_text(
+            evidence.legal_name
+        )
         + ":"
-        + normalized_country
+        + country
     )
 
 
@@ -175,13 +173,15 @@ def _candidate_id(
 ) -> str:
     raw = "|".join(
         [
-            _normalize_match_text(legal_name),
+            _normalize_match_text(
+                legal_name
+            ),
             website_domain or "",
-            _normalize_match_text(country or ""),
+            _normalize_match_text(
+                country or ""
+            ),
         ]
     )
-
-    # Stable readable identifier; not a secret or database identifier.
     compact = re.sub(
         r"[^a-z0-9]+",
         "-",
@@ -200,9 +200,13 @@ def _name_similarity(
         requested_name
     )
     options = {
-        _normalize_match_text(legal_name),
+        _normalize_match_text(
+            legal_name
+        ),
         *(
-            _normalize_match_text(alias)
+            _normalize_match_text(
+                alias
+            )
             for alias in aliases
             if str(alias).strip()
         ),
@@ -228,28 +232,24 @@ def _name_similarity(
         if not option_tokens:
             continue
 
-        intersection = len(
-            requested_tokens & option_tokens
-        )
         union = len(
             requested_tokens | option_tokens
         )
-        score = (
-            intersection / union
-            if union
-            else 0.0
-        )
-        best = max(
-            best,
-            score,
-        )
+
+        if union:
+            best = max(
+                best,
+                len(
+                    requested_tokens
+                    & option_tokens
+                )
+                / union,
+            )
 
     return best
 
 
-def _confidence_label(
-    value: float,
-) -> str:
+def _confidence_label(value: float) -> str:
     if value >= 0.85:
         return "HIGH"
     if value >= 0.65:
@@ -274,8 +274,12 @@ def _merge_group(
                 item.source_quality.upper(),
                 0.0,
             ),
-            bool(item.website),
-            bool(item.registration_number),
+            bool(
+                item.registration_number
+            ),
+            bool(
+                item.website
+            ),
         ),
     )
 
@@ -315,96 +319,85 @@ def _merge_group(
         )
     )
 
-    countries = [
-        _clean_optional(
-            record.country
-        )
-        for record in records
-        if _clean_optional(record.country)
-    ]
-    cities = [
-        _clean_optional(
-            record.city
-        )
-        for record in records
-        if _clean_optional(record.city)
-    ]
-    industries = [
-        _clean_optional(
-            record.industry
-        )
-        for record in records
-        if _clean_optional(record.industry)
-    ]
-    registrations = [
-        _clean_optional(
-            record.registration_number
-        )
-        for record in records
-        if _clean_optional(
-            record.registration_number
-        )
-    ]
-    parents = [
-        _clean_optional(
-            record.parent_company
-        )
-        for record in records
-        if _clean_optional(
-            record.parent_company
-        )
-    ]
-    public_private_values = [
-        _clean_optional(
-            record.public_private_status
-        )
-        for record in records
-        if _clean_optional(
-            record.public_private_status
-        )
-    ]
+    def first_value(
+        attribute: str,
+    ) -> str | None:
+        for record in records:
+            value = _clean_optional(
+                getattr(
+                    record,
+                    attribute,
+                )
+            )
 
-    candidate_country = (
-        countries[0]
-        if countries
-        else None
-    )
-    candidate_city = (
-        cities[0]
-        if cities
-        else None
-    )
-    candidate_industry = (
-        industries[0]
-        if industries
-        else None
-    )
+            if value:
+                return value
 
-    name_score = _name_similarity(
-        requested_name,
-        primary.legal_name,
-        aliases,
+        return None
+
+    candidate_country = first_value(
+        "country"
+    )
+    candidate_city = first_value(
+        "city"
+    )
+    candidate_industry = first_value(
+        "industry"
+    )
+    registration_number = first_value(
+        "registration_number"
+    )
+    parent_company = first_value(
+        "parent_company"
+    )
+    public_private_status = first_value(
+        "public_private_status"
     )
 
     quality_values = {
         record.source_quality.upper()
         for record in records
     }
+    unique_evidence_urls = tuple(
+        sorted(
+            {
+                record.source_url
+                for record in records
+                if record.source_url
+            }
+        )
+    )
+    unique_domains = {
+        domain
+        for domain in (
+            _domain(
+                record.source_url
+            )
+            for record in records
+        )
+        if domain
+    }
+
+    name_score = _name_similarity(
+        requested_name,
+        primary.legal_name,
+        aliases,
+    )
     strongest_quality = max(
         (
             SOURCE_QUALITY_WEIGHTS.get(
-                value,
+                quality,
                 0.0,
             )
-            for value in quality_values
+            for quality in quality_values
         ),
         default=0.0,
     )
 
-    confidence = 0.18
+    confidence = 0.10
+    confidence += name_score * 0.20
+    confidence += strongest_quality
     match_reasons: list[str] = []
-
-    confidence += name_score * 0.28
 
     if name_score >= 0.99:
         match_reasons.append(
@@ -415,57 +408,60 @@ def _merge_group(
             "Strong company-name similarity"
         )
 
-    confidence += strongest_quality
-
-    if (
-        "OFFICIAL_WEBSITE" in quality_values
-        or "COMPANY_OWNED" in quality_values
-    ):
-        match_reasons.append(
-            "Official company website evidence"
-        )
-
-    if "AUTHORITATIVE" in quality_values:
-        match_reasons.append(
-            "Government or regulator evidence"
-        )
-
-    if website_domain:
-        confidence += 0.12
-        match_reasons.append(
-            "Company domain identified"
-        )
-
-    if registrations:
-        confidence += 0.10
-        match_reasons.append(
-            "Registration identifier found"
-        )
-
     normalized_requested_website = _domain(
         website
     )
-
-    if (
+    website_matches_user = bool(
         normalized_requested_website
         and website_domain
         and normalized_requested_website
         == website_domain
-    ):
-        confidence += 0.20
+    )
+
+    if website_matches_user:
+        confidence += 0.34
         match_reasons.append(
             "Website matches user-provided domain"
+        )
+
+    if "AUTHORITATIVE" in quality_values:
+        confidence += 0.12
+        match_reasons.append(
+            "Government or registry evidence"
+        )
+
+    if registration_number:
+        confidence += 0.12
+        match_reasons.append(
+            "Registration identifier found"
+        )
+
+    if (
+        "OFFICIAL_WEBSITE"
+        in quality_values
+    ):
+        match_reasons.append(
+            "User-confirmed website evidence"
+        )
+    elif (
+        "POSSIBLE_COMPANY_WEBSITE"
+        in quality_values
+    ):
+        match_reasons.append(
+            "Possible company-domain lead"
         )
 
     if (
         country
         and candidate_country
-        and _normalize_match_text(country)
+        and _normalize_match_text(
+            country
+        )
         == _normalize_match_text(
             candidate_country
         )
     ):
-        confidence += 0.12
+        confidence += 0.10
         match_reasons.append(
             "Country matches user-provided context"
         )
@@ -473,12 +469,14 @@ def _merge_group(
     if (
         city
         and candidate_city
-        and _normalize_match_text(city)
+        and _normalize_match_text(
+            city
+        )
         == _normalize_match_text(
             candidate_city
         )
     ):
-        confidence += 0.08
+        confidence += 0.06
         match_reasons.append(
             "City matches user-provided context"
         )
@@ -486,36 +484,87 @@ def _merge_group(
     if (
         industry
         and candidate_industry
-        and _normalize_match_text(industry)
+        and _normalize_match_text(
+            industry
+        )
         == _normalize_match_text(
             candidate_industry
         )
     ):
-        confidence += 0.08
+        confidence += 0.06
         match_reasons.append(
             "Industry matches user-provided context"
         )
 
-    unique_evidence_urls = tuple(
-        sorted(
-            {
-                record.source_url
-                for record in records
-                if record.source_url
-            }
-        )
-    )
-
-    if len(unique_evidence_urls) >= 2:
+    if len(unique_domains) >= 2:
         confidence += min(
-            0.12,
+            0.14,
             (
-                len(unique_evidence_urls) - 1
+                len(
+                    unique_domains
+                )
+                - 1
             )
-            * 0.04,
+            * 0.07,
         )
         match_reasons.append(
-            "Supported by multiple public sources"
+            "Supported by independent public sources"
+        )
+
+    has_authoritative_corroboration = (
+        "AUTHORITATIVE" in quality_values
+        and (
+            len(unique_domains) >= 2
+            or website_matches_user
+        )
+    )
+    has_multi_source_website_support = (
+        (
+            "OFFICIAL_WEBSITE"
+            in quality_values
+            or "POSSIBLE_COMPANY_WEBSITE"
+            in quality_values
+        )
+        and len(unique_domains) >= 2
+    )
+
+    # Single-source, non-authoritative search leads can never look verified.
+    if (
+        len(unique_domains) <= 1
+        and not website_matches_user
+        and "AUTHORITATIVE"
+        not in quality_values
+    ):
+        confidence = min(
+            confidence,
+            0.54,
+        )
+
+    # A directory by itself is only a lead.
+    if (
+        quality_values
+        <= {
+            "REPUTABLE_BUSINESS_DIRECTORY",
+            "GENERAL_WEB",
+            "POSSIBLE_COMPANY_WEBSITE",
+        }
+        and len(unique_domains) <= 1
+        and not website_matches_user
+    ):
+        confidence = min(
+            confidence,
+            0.54,
+        )
+
+    # HIGH confidence requires explicit or corroborated identity evidence.
+    if not (
+        website_matches_user
+        or has_authoritative_corroboration
+        or has_multi_source_website_support
+    ):
+        confidence = min(
+            confidence,
+            0.79,
         )
 
     confidence = round(
@@ -542,21 +591,9 @@ def _merge_group(
         country=candidate_country,
         city=candidate_city,
         industry=candidate_industry,
-        registration_number=(
-            registrations[0]
-            if registrations
-            else None
-        ),
-        parent_company=(
-            parents[0]
-            if parents
-            else None
-        ),
-        public_private_status=(
-            public_private_values[0]
-            if public_private_values
-            else None
-        ),
+        registration_number=registration_number,
+        parent_company=parent_company,
+        public_private_status=public_private_status,
         identity_confidence=confidence,
         confidence_label=_confidence_label(
             confidence
@@ -587,36 +624,21 @@ def resolve_vendor_candidates(
     website: str | None = None,
     industry: str | None = None,
 ) -> VendorResolutionResult:
-    """
-    Resolve public candidate evidence into a safe pre-investigation state.
-
-    The function never claims complete internet coverage and never starts an
-    investigation. A candidate is auto-confirmed only when evidence is strong,
-    unique, and materially better than every alternative.
-    """
+    """Resolve candidate evidence without guessing or claiming full coverage."""
     requested = normalize_company_name(
         requested_name
     )
-    supplied_identity = build_company_identity(
-        requested,
-        website=website,
-        country=country,
-        industry=industry,
-    )
-
     grouped: dict[
         str,
         list[CandidateEvidence],
     ] = {}
 
     for record in evidence:
-        legal_name = normalize_company_name(
-            record.legal_name
-        )
-
         normalized_record = replace(
             record,
-            legal_name=legal_name,
+            legal_name=normalize_company_name(
+                record.legal_name
+            ),
             source_url=_clean_optional(
                 record.source_url
             )
@@ -643,21 +665,16 @@ def resolve_vendor_candidates(
             industry=_clean_optional(
                 record.industry
             ),
-            registration_number=(
-                _clean_optional(
-                    record.registration_number
-                )
+            registration_number=_clean_optional(
+                record.registration_number
             ),
             parent_company=_clean_optional(
                 record.parent_company
             ),
-            public_private_status=(
-                _clean_optional(
-                    record.public_private_status
-                )
+            public_private_status=_clean_optional(
+                record.public_private_status
             ),
         )
-
         grouped.setdefault(
             _candidate_key(
                 normalized_record
@@ -678,7 +695,6 @@ def resolve_vendor_candidates(
         )
         for records in grouped.values()
     ]
-
     candidates.sort(
         key=lambda candidate: (
             -candidate.identity_confidence,
@@ -718,8 +734,8 @@ def resolve_vendor_candidates(
                 REQUESTED_DETAIL_FIELDS
             ),
             message=(
-                "No sufficiently supported company identity could be "
-                "confirmed. Provide a country, city, website, or industry."
+                "No sufficiently authenticated company identity was found. "
+                "Provide a country, city, website, or industry."
             ),
             coverage_notice=coverage_notice,
         )
@@ -737,18 +753,32 @@ def resolve_vendor_candidates(
         else top.identity_confidence
     )
 
+    strong_identity_basis = (
+        "Website matches user-provided domain"
+        in top.match_reasons
+        or (
+            "AUTHORITATIVE"
+            in top.source_quality_labels
+            and top.evidence_source_count >= 2
+        )
+        or (
+            top.evidence_source_count >= 2
+            and (
+                "OFFICIAL_WEBSITE"
+                in top.source_quality_labels
+                or "POSSIBLE_COMPANY_WEBSITE"
+                in top.source_quality_labels
+            )
+        )
+    )
+
     auto_confirm = (
         top.identity_confidence
         >= AUTO_CONFIRM_THRESHOLD
+        and strong_identity_basis
         and (
             runner_up is None
             or margin >= AUTO_CONFIRM_MARGIN
-        )
-        and (
-            top.website_domain is not None
-            or top.registration_number is not None
-            or "AUTHORITATIVE"
-            in top.source_quality_labels
         )
     )
 
@@ -760,28 +790,37 @@ def resolve_vendor_candidates(
             candidates=plausible,
             requested_fields=(),
             message=(
-                "A single strongly supported company identity was found."
+                "A single strongly authenticated company identity was found."
             ),
             coverage_notice=coverage_notice,
         )
 
-    if len(plausible) >= 2:
+    selectable = tuple(
+        candidate
+        for candidate in plausible
+        if (
+            candidate.identity_confidence
+            >= 0.65
+            and candidate.evidence_source_count >= 2
+        )
+    )
+
+    if len(selectable) >= 2:
         return VendorResolutionResult(
             resolution_status=(
                 "SELECTION_REQUIRED"
             ),
             requested_name=requested,
             selected_candidate=None,
-            candidates=plausible,
+            candidates=selectable,
             requested_fields=(),
             message=(
-                "Several plausible businesses match this name. "
+                "Several independently supported businesses match this name. "
                 "Select the correct vendor before investigation."
             ),
             coverage_notice=coverage_notice,
         )
 
-    # One weak or incomplete candidate is not silently accepted.
     requested_fields = tuple(
         field
         for field, value in (
@@ -802,7 +841,9 @@ def resolve_vendor_candidates(
                 industry,
             ),
         )
-        if not _clean_optional(value)
+        if not _clean_optional(
+            value
+        )
     )
 
     return VendorResolutionResult(
@@ -817,8 +858,8 @@ def resolve_vendor_candidates(
             or REQUESTED_DETAIL_FIELDS
         ),
         message=(
-            "One possible business was found, but its identity evidence "
-            "is not strong enough for automatic confirmation."
+            "Possible company leads were found, but the identity evidence "
+            "is not sufficiently authenticated. Provide more context."
         ),
         coverage_notice=coverage_notice,
     )
