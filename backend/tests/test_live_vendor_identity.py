@@ -230,3 +230,102 @@ def test_social_profile_is_not_identity_candidate() -> None:
     )
 
     assert record is None
+
+
+
+def test_cpsc_recall_is_context_not_identity_evidence() -> None:
+    quality = classify_identity_source(
+        (
+            "https://www.cpsc.gov/Recalls/1973/"
+            "consumer-product-safety-commission-recall"
+        ),
+        requested_name="ABC Trading",
+        requested_website_domain=None,
+        combined_text=(
+            "ABC Trading product recall hazard safety warning"
+        ),
+    )
+
+    assert quality == "AUTHORITATIVE_CONTEXT"
+
+    record = result_to_candidate_evidence(
+        _request(),
+        {
+            "title": "ABC Trading product recall",
+            "url": (
+                "https://www.cpsc.gov/Recalls/1973/"
+                "consumer-product-safety-commission-recall"
+            ),
+            "snippet": "Product recall and hazard notice.",
+        },
+    )
+
+    assert record is None
+
+
+def test_government_registry_record_is_identity_evidence() -> None:
+    quality = classify_identity_source(
+        "https://registry.example.gov/company/ABC-123",
+        requested_name="ABC Trading",
+        requested_website_domain=None,
+        combined_text=(
+            "ABC Trading legal name registration number ABC-123 "
+            "registered office company status active"
+        ),
+    )
+
+    assert quality == "AUTHORITATIVE_IDENTITY"
+
+
+def test_generic_government_page_defaults_to_context() -> None:
+    quality = classify_identity_source(
+        "https://agency.example.gov/public-information",
+        requested_name="ABC Trading",
+        requested_website_domain=None,
+        combined_text="ABC Trading public information page",
+    )
+
+    assert quality == "AUTHORITATIVE_CONTEXT"
+
+
+def test_collector_keeps_accepted_identity_audit() -> None:
+    collector = LiveVendorIdentityCollector(
+        serp=FakeSERP(
+            responses=[
+                [
+                    {
+                        "title": "ABC Trading company record",
+                        "url": (
+                            "https://registry.example.gov/"
+                            "company/ABC-123"
+                        ),
+                        "snippet": (
+                            "ABC Trading legal name registration "
+                            "number ABC-123"
+                        ),
+                    }
+                ],
+                [],
+            ]
+        ),
+        mcp=FakeMCP(results=[]),
+    )
+
+    batch = asyncio.run(
+        collector.collect(
+            _request()
+        )
+    )
+
+    assert len(batch.records) == 1
+    assert len(batch.accepted_results) == 1
+    audit = batch.accepted_results[0]
+    assert set(audit) == {
+        "url",
+        "title",
+        "source_quality",
+        "proposed_legal_name",
+        "acceptance_reason",
+    }
+    assert audit["source_quality"] == "AUTHORITATIVE_IDENTITY"
+    assert "registry" in audit["acceptance_reason"].lower()
