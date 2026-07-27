@@ -61,6 +61,7 @@ FORBIDDEN_CANDIDATE_SOURCE_LABELS = {
     "GENERAL_WEB",
     "SOCIAL",
     "REPUTABLE_NEWS",
+    "AUTHORITATIVE_CONTEXT",
 }
 
 FORBIDDEN_CANDIDATE_PATH_MARKERS = (
@@ -75,6 +76,21 @@ FORBIDDEN_CANDIDATE_PATH_MARKERS = (
     "/guides/",
     "/download/",
     "/downloads/",
+)
+
+FORBIDDEN_IDENTITY_CONTEXT_PATH_MARKERS = (
+    "/recall",
+    "/recalls/",
+    "/enforcement/",
+    "/press-release",
+    "/warning",
+    "/advisory",
+    "/complaint",
+    "/court/",
+    "/case/",
+    "/investigation",
+    "/consumer-alert",
+    "/safety-alert",
 )
 
 
@@ -155,6 +171,17 @@ def _validate_candidate(
         _require(
             _valid_http_url(url),
             "Candidate contains an invalid evidence URL.",
+        )
+        normalized_url = _clean(url).lower()
+        _require(
+            not any(
+                marker in normalized_url
+                for marker in FORBIDDEN_IDENTITY_CONTEXT_PATH_MARKERS
+            ),
+            (
+                "Government context page was used as company "
+                "identity evidence."
+            ),
         )
 
     source_labels = candidate.get(
@@ -410,6 +437,83 @@ def validate_identity_response(
         "candidate_evidence_records must be a non-negative integer.",
     )
 
+    accepted_results = search.get(
+        "accepted_results"
+    )
+    accepted_count = search.get(
+        "accepted_result_count"
+    )
+    _require(
+        isinstance(accepted_results, list),
+        "accepted_results must be a list.",
+    )
+    _require(
+        isinstance(accepted_count, int)
+        and accepted_count == len(
+            accepted_results
+        ),
+        "accepted_result_count does not match accepted_results.",
+    )
+
+    for accepted in accepted_results:
+        _require(
+            isinstance(accepted, dict),
+            "Every accepted identity result must be an object.",
+        )
+        _require(
+            set(accepted) == {
+                "url",
+                "title",
+                "source_quality",
+                "proposed_legal_name",
+                "acceptance_reason",
+            },
+            (
+                "Accepted identity audit contains unsupported "
+                "or raw-content fields."
+            ),
+        )
+        _require(
+            _valid_http_url(
+                accepted.get("url")
+            ),
+            "Accepted identity result contains an invalid URL.",
+        )
+        _require(
+            accepted.get("source_quality")
+            not in {
+                "AUTHORITATIVE_CONTEXT",
+                "GENERAL_WEB",
+                "SOCIAL",
+                "REPUTABLE_NEWS",
+            },
+            (
+                "Non-identity context was accepted as company "
+                "identity evidence."
+            ),
+        )
+        normalized_url = _clean(
+            accepted.get("url")
+        ).lower()
+        _require(
+            not any(
+                marker in normalized_url
+                for marker in FORBIDDEN_IDENTITY_CONTEXT_PATH_MARKERS
+            ),
+            (
+                "Government recall, enforcement, court, warning, "
+                "or investigation page was accepted as identity."
+            ),
+        )
+        _require(
+            bool(
+                _clean(
+                    accepted.get("acceptance_reason")
+                )
+            ),
+            "Accepted identity result is missing an acceptance reason.",
+        )
+
     rejected_results = search.get(
         "rejected_results"
     )
@@ -491,6 +595,7 @@ def validate_identity_response(
         "resolution_status": status,
         "candidate_count": len(candidates),
         "candidate_evidence_records": record_count,
+        "accepted_result_count": accepted_count,
         "rejected_result_count": rejected_count,
         "providers": providers,
         "warnings": search.get("warnings", []),
@@ -586,6 +691,10 @@ def main() -> None:
     print(
         "Identity evidence records: "
         f"{validation['candidate_evidence_records']}"
+    )
+    print(
+        "Accepted identity results: "
+        f"{validation['accepted_result_count']}"
     )
     print(
         "Rejected identity results: "
