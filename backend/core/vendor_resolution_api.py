@@ -167,6 +167,26 @@ async def resolve_vendor_identity(
         "candidate_evidence_records": len(
             evidence_batch.records
         ),
+        "rejected_result_count": len(
+            evidence_batch.rejected_results
+        ),
+        "rejected_results": [
+            {
+                "url": record.get(
+                    "url",
+                    "",
+                ),
+                "title": record.get(
+                    "title",
+                    "",
+                ),
+                "reason": record.get(
+                    "reason",
+                    "Rejected by identity-authenticity controls.",
+                ),
+            }
+            for record in evidence_batch.rejected_results
+        ],
         "queries_executed": list(
             evidence_batch.queries_executed
         ),
