@@ -1,4 +1,4 @@
-Controlled vendor identity live smoke test.
+Controlled vendor identity live smoke test — run 002
 
 Vendor input: ABC Trading
 
@@ -11,10 +11,15 @@ Expected external activity:
 - Database writes: 0
 - Investigation jobs: 0
 
+Required authenticity checks:
+- search-discovered pages must not be labelled OFFICIAL_WEBSITE
+- PDFs, blogs, news pages, guides, downloads, and archives must be rejected
+- single non-authoritative sources must remain LIMITED confidence
+- SELECTION_REQUIRED is allowed only for independently supported candidates
+- rejected results must contain only URL, title, and rejection reason
+- ambiguous or weak evidence must return MORE_INFORMATION_REQUIRED
+
 Accepted safe outcomes:
 - CONFIRMED
 - SELECTION_REQUIRED
 - MORE_INFORMATION_REQUIRED
-
-The test must not force a company match when accessible public identity
-evidence is ambiguous or insufficient.
