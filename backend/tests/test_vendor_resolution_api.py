@@ -86,6 +86,8 @@ def test_controlled_collector_does_not_claim_live_search(
     assert payload["resolution_status"] == "MORE_INFORMATION_REQUIRED"
     assert payload["identity_search"]["search_performed"] is False
     assert payload["identity_search"]["providers"] == []
+    assert payload["identity_search"]["accepted_result_count"] == 0
+    assert payload["identity_search"]["accepted_results"] == []
     assert payload["identity_search"]["rejected_result_count"] == 0
     assert payload["identity_search"]["rejected_results"] == []
     assert payload["identity_search"]["risk_scoring_started"] is False
@@ -115,7 +117,7 @@ def test_independently_supported_matches_require_selection(
                     legal_name="ABC Trading Ltd.",
                     aliases=("ABC Trading",),
                     source_url="https://registry.bd.gov/company/abc",
-                    source_quality="AUTHORITATIVE",
+                    source_quality="AUTHORITATIVE_IDENTITY",
                     website="https://abc-bd.example",
                     country="Bangladesh",
                     city="Chattogram",
@@ -136,7 +138,7 @@ def test_independently_supported_matches_require_selection(
                     legal_name="ABC Trading Pte. Ltd.",
                     aliases=("ABC Trading",),
                     source_url="https://registry.sg.gov/company/abc",
-                    source_quality="AUTHORITATIVE",
+                    source_quality="AUTHORITATIVE_IDENTITY",
                     website="https://abc-sg.example",
                     country="Singapore",
                     city="Singapore",
@@ -202,7 +204,7 @@ def test_user_domain_and_registry_confirm_identity(
                     legal_name="Microsoft Corporation",
                     aliases=("Microsoft",),
                     source_url="https://www.sec.gov/example",
-                    source_quality="AUTHORITATIVE",
+                    source_quality="AUTHORITATIVE_IDENTITY",
                     website="https://www.microsoft.com",
                     country="United States",
                     industry="Technology",
@@ -429,3 +431,72 @@ def test_rejected_identity_results_are_exposed_without_raw_content(
         assert "content" not in record
         assert "snippet" not in record
         assert "body" not in record
+
+
+
+def test_accepted_identity_audit_is_safe_and_typed(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    async def collector(request) -> IdentityEvidenceBatch:
+        del request
+
+        return IdentityEvidenceBatch(
+            records=(
+                _record(
+                    legal_name="ABC Trading Ltd.",
+                    aliases=("ABC Trading",),
+                    source_url=(
+                        "https://registry.example.gov/"
+                        "company/ABC-123"
+                    ),
+                    source_quality="AUTHORITATIVE_IDENTITY",
+                    country="Bangladesh",
+                    registration_number="ABC-123",
+                ),
+            ),
+            search_performed=True,
+            providers=("Test Identity Provider",),
+            accepted_results=(
+                {
+                    "url": (
+                        "https://registry.example.gov/"
+                        "company/ABC-123"
+                    ),
+                    "title": "ABC Trading company record",
+                    "source_quality": "AUTHORITATIVE_IDENTITY",
+                    "proposed_legal_name": "ABC Trading Ltd.",
+                    "acceptance_reason": (
+                        "government or corporate registry identity record"
+                    ),
+                },
+            ),
+        )
+
+    monkeypatch.setattr(
+        api_module,
+        "identity_evidence_collector",
+        collector,
+    )
+
+    response = client.post(
+        "/api/vendors/resolve",
+        json={"vendor_name": "ABC Trading"},
+    )
+
+    assert response.status_code == 200
+    search = response.json()["identity_search"]
+    assert search["accepted_result_count"] == 1
+    assert len(search["accepted_results"]) == 1
+    record = search["accepted_results"][0]
+    assert set(record) == {
+        "url",
+        "title",
+        "source_quality",
+        "proposed_legal_name",
+        "acceptance_reason",
+    }
+    assert record["source_quality"] == "AUTHORITATIVE_IDENTITY"
+    assert "snippet" not in record
+    assert "content" not in record
+    assert "body" not in record
