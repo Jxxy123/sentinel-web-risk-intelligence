@@ -6,3 +6,4 @@ Required behavior:
 - invalid, expired, replayed, mismatched, or non-confirmed identity cannot create a job.
 - authorization tokens never appear in job state, reports, logs, or artifacts.
 - the orchestrator receives only the sanitized confirmed identity snapshot.
+- Retry: install pytest dependencies
