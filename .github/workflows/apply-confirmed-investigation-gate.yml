@@ -34,11 +34,12 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
 
-      - name: Install backend dependencies
+      - name: Install backend and test dependencies
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt
+          python -m pip install pytest pytest-asyncio
 
       - name: Apply confirmed investigation gate
         working-directory: backend
@@ -47,14 +48,14 @@ jobs:
       - name: Run focused gate tests
         working-directory: backend
         run: |
-          pytest -q \
+          python -m pytest -q \
             tests/test_investigation_authorization.py \
             tests/test_confirmed_investigation_gate.py \
             tests/test_confirmed_orchestrator_context.py
 
       - name: Run complete backend suite
         working-directory: backend
-        run: pytest tests -q
+        run: python -m pytest tests -q
 
       - name: Commit synchronized gate implementation
         run: |
