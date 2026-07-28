@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -184,6 +185,91 @@ def _domain(value: Any) -> str:
         parsed.netloc.lower()
         .removeprefix("www.")
     )
+
+
+LEGAL_COMPANY_SUFFIXES = {
+    "inc",
+    "incorporated",
+    "corp",
+    "corporation",
+    "company",
+    "co",
+    "limited",
+    "ltd",
+    "llc",
+    "plc",
+    "holdings",
+    "group",
+    "llp",
+    "pte",
+    "sdn",
+    "bhd",
+    "gmbh",
+    "ag",
+    "sa",
+    "spa",
+    "srl",
+    "bv",
+    "nv",
+    "oy",
+    "ab",
+}
+
+
+def _domain_matches_expected(
+    observed_domain: str,
+    expected_domain: str,
+) -> bool:
+    return bool(
+        observed_domain
+        and expected_domain
+        and (
+            observed_domain == expected_domain
+            or observed_domain.endswith(
+                "." + expected_domain
+            )
+        )
+    )
+
+
+def _company_name_is_canonical(
+    requested_name: Any,
+    candidate_name: Any,
+) -> bool:
+    requested_tokens = [
+        token
+        for token in re.sub(
+            r"[^a-z0-9]+",
+            " ",
+            _clean(requested_name).lower(),
+        ).split()
+        if token
+    ]
+    candidate_tokens = [
+        token
+        for token in re.sub(
+            r"[^a-z0-9]+",
+            " ",
+            _clean(candidate_name).lower(),
+        ).split()
+        if token
+    ]
+
+    if not requested_tokens or not candidate_tokens:
+        return False
+
+    requested_core = [
+        token
+        for token in requested_tokens
+        if token not in LEGAL_COMPANY_SUFFIXES
+    ]
+    candidate_core = [
+        token
+        for token in candidate_tokens
+        if token not in LEGAL_COMPANY_SUFFIXES
+    ]
+
+    return candidate_core == requested_core
 
 
 def _valid_http_url(value: Any) -> bool:
@@ -443,11 +529,30 @@ def validate_runtime_response(
 
         if expected_domain:
             require(
-                selected_domain
-                == expected_domain,
+                _domain_matches_expected(
+                    selected_domain,
+                    expected_domain,
+                ),
                 (
                     "Selected candidate domain does not "
                     "match the user-supplied website."
+                ),
+            )
+
+        if status == "CONFIRMED":
+            require(
+                _company_name_is_canonical(
+                    request_body.get(
+                        "vendor_name"
+                    ),
+                    selected.get(
+                        "legal_name"
+                    ),
+                ),
+                (
+                    "Confirmed legal_name looks like a "
+                    "page or document title instead of "
+                    "the requested company identity."
                 ),
             )
 
@@ -760,14 +865,31 @@ def validate_runtime_response(
                         ),
                     )
                     require(
-                        _domain(
-                            result.get("url")
-                        )
-                        == expected_domain,
+                        _domain_matches_expected(
+                            _domain(
+                                result.get("url")
+                            ),
+                            expected_domain,
+                        ),
                         (
                             "OFFICIAL_WEBSITE was "
                             "assigned to a different "
                             "domain."
+                        ),
+                    )
+                    require(
+                        _company_name_is_canonical(
+                            request_body.get(
+                                "vendor_name"
+                            ),
+                            result.get(
+                                "proposed_legal_name"
+                            ),
+                        ),
+                        (
+                            "OFFICIAL_WEBSITE proposed "
+                            "legal name looks like a page "
+                            "or document title."
                         ),
                     )
 
