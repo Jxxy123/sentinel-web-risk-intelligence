@@ -7,3 +7,4 @@ Required behavior:
 - authorization tokens never appear in job state, reports, logs, or artifacts.
 - the orchestrator receives only the sanitized confirmed identity snapshot.
 - Retry: install pytest dependencies
+- Retry: corrected orchestrator identity-context assertions
