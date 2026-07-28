@@ -1,0 +1,127 @@
+name: Apply Identity-First Frontend Flow
+
+on:
+  push:
+    branches:
+      - testing/enterprise-readiness
+    paths:
+      - frontend/tools/run_apply_identity_first_frontend.txt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-identity-first-frontend
+  cancel-in-progress: false
+
+jobs:
+  identity-first-frontend:
+    name: Resolve Authorize Investigate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out enterprise branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Apply identity-first frontend patch
+        run: python frontend/tools/apply_identity_first_frontend.py
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run focused production build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Verify identity-first contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          api = Path("frontend/src/lib/api.ts").read_text(
+              encoding="utf-8"
+          )
+          page = Path("frontend/src/app/page.tsx").read_text(
+              encoding="utf-8"
+          )
+          panel = Path(
+              "frontend/src/components/dashboard/"
+              "VendorIdentityPanel.tsx"
+          ).read_text(encoding="utf-8")
+
+          checks = {
+              "resolve endpoint": (
+                  "/api/vendors/resolve" in api
+              ),
+              "authorization submitted": (
+                  "identity_authorization_id" in api
+              ),
+              "confirmed gate before launch": (
+                  'resolution_status !== "CONFIRMED"'
+                  in page
+              ),
+              "selection UI": (
+                  "SELECTION_REQUIRED" in panel
+              ),
+              "more-information UI": (
+                  "Resolve & Continue" in panel
+              ),
+              "speech remains review-first": (
+                  "handleInvestigate(cleanedInput)"
+                  not in page
+              ),
+              "token not persisted": (
+                  "localStorage" not in page
+                  and "sessionStorage" not in page
+              ),
+          }
+
+          failed = [
+              name
+              for name, passed in checks.items()
+              if not passed
+          ]
+
+          for name, passed in checks.items():
+              print(
+                  f"{'PASS' if passed else 'FAIL'}: {name}"
+              )
+
+          if failed:
+              raise SystemExit(
+                  "Focused identity-first checks failed: "
+                  + ", ".join(failed)
+              )
+          PY
+
+      - name: Commit verified frontend flow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            frontend/src/lib/api.ts \
+            frontend/src/app/page.tsx \
+            frontend/src/components/dashboard/VendorIdentityPanel.tsx
+
+          if git diff --cached --quiet; then
+            echo "No identity-first frontend changes to commit."
+            exit 0
+          fi
+
+          git commit -m "feat: connect frontend to confirmed identity gate"
+          git push
