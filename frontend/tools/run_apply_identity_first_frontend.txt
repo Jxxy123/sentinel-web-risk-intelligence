@@ -1,0 +1,4 @@
+# Identity-first frontend integration trigger
+- Flow: resolve vendor -> authorize -> investigate
+- Branch: testing/enterprise-readiness
+- Scope: frontend only
