@@ -10,3 +10,4 @@ Required behavior:
 - Retry: corrected orchestrator identity-context assertions
 - Retry: propagate sanitized identity context into investigation
 - Retry: verified v4 identity propagation patch
+- Retry: verified v5 API contract preservation
