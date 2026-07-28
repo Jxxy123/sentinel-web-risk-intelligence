@@ -22,6 +22,10 @@ from pydantic import BaseModel
 
 from agents.orchestrator import SentinelOrchestrator
 from core.config import settings
+from core.investigation_authorization import (
+    InvestigationAuthorizationError,
+    consume_investigation_authorization,
+)
 from core.database import (
     delete_report_by_id,
     get_recent_reports,
@@ -113,6 +117,7 @@ class VendorInvestigationRequest(BaseModel):
     """Request body for a confirmed vendor investigation."""
 
     vendor_name: str
+    identity_authorization_id: str | None = None
     job_id: str | None = None
     language: str = "EN"
 
@@ -144,8 +149,9 @@ async def start_investigation(
     """
     Start an autonomous vendor investigation.
 
-    Vendor identity resolution is available separately through
-    POST /api/vendors/resolve. This route remains backward compatible.
+    A short-lived authorization from POST /api/vendors/resolve is
+    required. Unconfirmed, expired, mismatched, or replayed identity
+    authorizations cannot create investigation jobs.
     """
     vendor_name = " ".join(
         request.vendor_name.split()
@@ -177,10 +183,26 @@ async def start_investigation(
             detail="job_id already exists",
         )
 
+    try:
+        confirmed_identity = (
+            consume_investigation_authorization(
+                request.identity_authorization_id,
+                requested_vendor_name=request.vendor_name,
+            )
+        )
+    except InvestigationAuthorizationError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=error.detail,
+        ) from error
+
+    vendor_name = confirmed_identity["canonical_name"]
+
     active_jobs[job_id] = {
         "job_id": job_id,
         "vendor_name": vendor_name,
         "language": language,
+        "identity": confirmed_identity,
         "status": "queued",
         "progress": 0,
         "stage": "queued",
@@ -196,6 +218,7 @@ async def start_investigation(
         job_id,
         vendor_name,
         language,
+        confirmed_identity,
     )
 
     return {
@@ -209,6 +232,7 @@ async def _run_investigation(
     job_id: str,
     vendor_name: str,
     language: str,
+    identity_context: dict[str, Any],
 ) -> None:
     """Run one investigation and keep its job state synchronized."""
 
@@ -264,8 +288,8 @@ async def _run_investigation(
             progress_callback=progress_callback
         )
 
-        report = await orchestrator.investigate_vendor(
-            vendor_name,
+        report = await orchestrator.investigate_confirmed_vendor(
+            identity_context,
             language=language,
         )
 

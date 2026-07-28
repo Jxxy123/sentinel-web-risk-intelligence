@@ -100,6 +100,44 @@ def _normalize_language(language: str) -> str:
     return normalized or "EN"
 
 
+def _normalize_confirmed_identity_context(
+    identity_context: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate and minimize confirmed identity context for a report."""
+    if not isinstance(identity_context, dict):
+        raise ValueError("Confirmed identity context is required.")
+
+    if str(identity_context.get("status", "")).upper() != "CONFIRMED":
+        raise ValueError("Investigation requires CONFIRMED identity status.")
+
+    canonical_name = _normalize_vendor_name(
+        str(identity_context.get("canonical_name", ""))
+    )
+    confidence = identity_context.get("identity_confidence")
+
+    if (
+        not isinstance(confidence, (int, float))
+        or isinstance(confidence, bool)
+        or float(confidence) < 0.90
+    ):
+        raise ValueError("Confirmed identity confidence is below 0.90.")
+
+    return {
+        "status": "CONFIRMED",
+        "requested_name": str(identity_context.get("requested_name", "")).strip(),
+        "canonical_name": canonical_name,
+        "website": identity_context.get("website"),
+        "website_domain": identity_context.get("website_domain"),
+        "country": identity_context.get("country"),
+        "city": identity_context.get("city"),
+        "industry": identity_context.get("industry"),
+        "identity_confidence": round(float(confidence), 2),
+        "confidence_label": str(identity_context.get("confidence_label", "HIGH")),
+        "source_quality_labels": list(identity_context.get("source_quality_labels") or []),
+        "evidence_urls": list(identity_context.get("evidence_urls") or []),
+    }
+
+
 def _append_tool_once(
     tools_used: list[str],
     tool_name: str,
@@ -631,10 +669,30 @@ class SentinelOrchestrator:
         print("[CREW ERROR] All retry attempts were exhausted.")
         return "{}"
 
+    async def investigate_confirmed_vendor(
+        self,
+        identity_context: dict[str, Any],
+        language: str = "EN",
+    ) -> dict[str, Any]:
+        """Investigate only a strongly confirmed canonical identity."""
+        confirmed = _normalize_confirmed_identity_context(
+            identity_context
+        )
+        report = await self.investigate_vendor(
+            confirmed["canonical_name"],
+            language=language,
+            identity_context=confirmed,
+        )
+        report["identity_context"] = confirmed
+        raw = report.setdefault("raw_intelligence", {})
+        raw["identity_gate"] = "confirmed"
+        return report
+
     async def investigate_vendor(
         self,
         vendor_name: str,
         language: str = "EN",
+        identity_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Run the complete vendor investigation pipeline.

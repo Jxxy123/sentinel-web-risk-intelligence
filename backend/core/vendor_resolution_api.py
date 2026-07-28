@@ -11,6 +11,9 @@ from typing import Awaitable, Callable
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from core.investigation_authorization import (
+    issue_investigation_authorization,
+)
 from core.live_vendor_identity import (
     IdentityEvidenceBatch,
     collect_live_vendor_identity_evidence,
@@ -244,5 +247,12 @@ async def resolve_vendor_identity(
         "risk_scoring_started": False,
         "database_writes": 0,
     }
+
+    payload["investigation_authorization"] = None
+
+    if payload.get("resolution_status") == "CONFIRMED":
+        payload["investigation_authorization"] = (
+            issue_investigation_authorization(payload)
+        )
 
     return payload
