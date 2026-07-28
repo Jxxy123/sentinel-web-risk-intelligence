@@ -1,5 +1,7 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const WS_BASE =
+  process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
 
 export interface InvestigationJob {
   job_id: string;
@@ -11,6 +13,13 @@ export interface InvestigationJob {
   report: RiskReport | null;
   error: string | null;
   started_at: string;
+  completed_at?: string | null;
+  identity?: {
+    status: "CONFIRMED";
+    canonical_name: string;
+    website_domain?: string | null;
+    identity_confidence?: number;
+  };
 }
 
 export interface RiskSignal {
@@ -36,8 +45,8 @@ export interface RiskReport {
   monitoring_signals: string[];
   time_horizon: string;
   signals: RiskSignal[];
-  sources: { url: string; title: string }[];
-  raw_intelligence: Record<string, any>;
+  sources: { url: string; title: string; source?: string }[];
+  raw_intelligence: Record<string, unknown>;
   status: string;
   generated_at: string;
 }
@@ -49,66 +58,242 @@ export interface DashboardStats {
   average_risk_score: number;
 }
 
-// ─────────────────────────────────────────
-// API Functions
-// ─────────────────────────────────────────
+export type VendorResolutionStatus =
+  | "CONFIRMED"
+  | "SELECTION_REQUIRED"
+  | "MORE_INFORMATION_REQUIRED";
 
-export async function startInvestigation({ 
-  vendor_name, 
-  language = "EN" 
-}: { 
-  vendor_name: string; 
-  language?: string; 
-}): Promise<{ job_id: string }> {
-  const res = await fetch(`${API_BASE}/api/investigate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ vendor_name: vendor_name.trim(), language }),
-  });
-  if (!res.ok) throw new Error(`Investigation failed: ${res.statusText}`);
-  return res.json();
+export interface VendorCandidate {
+  candidate_id: string;
+  legal_name: string;
+  aliases: string[];
+  website: string | null;
+  website_domain: string | null;
+  country: string | null;
+  city: string | null;
+  industry: string | null;
+  registration_number: string | null;
+  parent_company: string | null;
+  public_private_status: string | null;
+  identity_confidence: number;
+  confidence_label: string;
+  evidence_source_count: number;
+  source_quality_labels: string[];
+  evidence_urls: string[];
+  match_reasons: string[];
 }
 
-export async function getJobStatus(jobId: string): Promise<InvestigationJob> {
-  const res = await fetch(`${API_BASE}/api/jobs/${jobId}`);
-  if (!res.ok) throw new Error(`Job not found: ${jobId}`);
-  return res.json();
+export interface InvestigationAuthorization {
+  authorization_id: string;
+  expires_at: string;
+  single_use: true;
+  required_for: "/api/investigate";
 }
 
-export async function getRecentReports(): Promise<{ reports: RiskReport[]; count: number }> {
-  const res = await fetch(`${API_BASE}/api/reports`);
-  if (!res.ok) throw new Error("Failed to fetch reports");
-  return res.json();
+export interface VendorResolutionRequest {
+  vendor_name: string;
+  country?: string;
+  city?: string;
+  website?: string;
+  industry?: string;
+  language?: string;
 }
 
-export async function getDashboardStats(): Promise<DashboardStats> {
-  const res = await fetch(`${API_BASE}/api/dashboard/stats`);
-  if (!res.ok) throw new Error("Failed to fetch stats");
-  return res.json();
+export interface VendorResolutionResponse {
+  resolution_status: VendorResolutionStatus;
+  requested_name: string;
+  selected_candidate: VendorCandidate | null;
+  candidates: VendorCandidate[];
+  requested_fields: string[];
+  message: string;
+  coverage_notice: string;
+  identity_search: {
+    search_performed: boolean;
+    providers: string[];
+    warnings: string[];
+    candidate_evidence_records: number;
+    accepted_result_count: number;
+    directory_lead_count: number;
+    rejected_result_count: number;
+    assessment_type: string;
+    llm_used: boolean;
+    risk_scoring_started: boolean;
+    database_writes: number;
+  };
+  investigation_authorization:
+    | InvestigationAuthorization
+    | null;
+}
+
+async function readApiError(
+  response: Response,
+  fallback: string,
+): Promise<string> {
+  const payload = await response
+    .json()
+    .catch(() => null) as
+      | { detail?: unknown }
+      | null;
+
+  if (
+    payload
+    && typeof payload.detail === "string"
+    && payload.detail.trim()
+  ) {
+    return payload.detail.trim();
+  }
+
+  return fallback;
+}
+
+export async function resolveVendorIdentity(
+  request: VendorResolutionRequest,
+): Promise<VendorResolutionResponse> {
+  const response = await fetch(
+    `${API_BASE}/api/vendors/resolve`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        vendor_name: request.vendor_name.trim(),
+        country: request.country?.trim() || undefined,
+        city: request.city?.trim() || undefined,
+        website: request.website?.trim() || undefined,
+        industry: request.industry?.trim() || undefined,
+        language: request.language || "EN",
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await readApiError(
+        response,
+        "Vendor identity resolution failed.",
+      ),
+    );
+  }
+
+  return response.json();
+}
+
+export async function startInvestigation({
+  vendor_name,
+  identity_authorization_id,
+  language = "EN",
+}: {
+  vendor_name: string;
+  identity_authorization_id: string;
+  language?: string;
+}): Promise<{
+  job_id: string;
+  status: string;
+  vendor_name: string;
+}> {
+  const response = await fetch(
+    `${API_BASE}/api/investigate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        vendor_name: vendor_name.trim(),
+        identity_authorization_id,
+        language,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await readApiError(
+        response,
+        "Authorized investigation failed to start.",
+      ),
+    );
+  }
+
+  return response.json();
+}
+
+export async function getJobStatus(
+  jobId: string,
+): Promise<InvestigationJob> {
+  const response = await fetch(
+    `${API_BASE}/api/jobs/${jobId}`,
+  );
+
+  if (!response.ok) {
+    throw new Error(`Job not found: ${jobId}`);
+  }
+
+  return response.json();
+}
+
+export async function getRecentReports(): Promise<{
+  reports: RiskReport[];
+  count: number;
+}> {
+  const response = await fetch(
+    `${API_BASE}/api/reports`,
+  );
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch reports");
+  }
+
+  return response.json();
+}
+
+export async function getDashboardStats(): Promise<
+  DashboardStats
+> {
+  const response = await fetch(
+    `${API_BASE}/api/dashboard/stats`,
+  );
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch stats");
+  }
+
+  return response.json();
 }
 
 export function createJobWebSocket(
   jobId: string,
   onProgress: (data: InvestigationJob) => void,
   onComplete: (data: InvestigationJob) => void,
-  onError: (error: string) => void
+  onError: (error: string) => void,
 ): WebSocket {
-  const ws = new WebSocket(`${WS_BASE}/ws/jobs/${jobId}`);
+  const socket = new WebSocket(
+    `${WS_BASE}/ws/jobs/${jobId}`,
+  );
 
-  ws.onmessage = (event) => {
-    const msg = JSON.parse(event.data);
-    if (msg.type === "progress" || msg.type === "status") {
-      onProgress(msg.data);
-    } else if (msg.type === "completed") {
-      onComplete(msg.data);
-    } else if (msg.type === "failed") {
-      onError(msg.data?.error || "Investigation failed");
+  socket.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+
+    if (
+      message.type === "progress"
+      || message.type === "status"
+    ) {
+      onProgress(message.data);
+    } else if (message.type === "completed") {
+      onComplete(message.data);
+    } else if (message.type === "failed") {
+      onError(
+        message.data?.error || "Investigation failed",
+      );
     }
   };
 
-  ws.onerror = () => onError("WebSocket connection error");
+  socket.onerror = () => {
+    onError("WebSocket connection error");
+  };
 
-  return ws;
+  return socket;
 }
 
 export function getRiskColor(level: string): string {
@@ -118,6 +303,7 @@ export function getRiskColor(level: string): string {
     MEDIUM: "#F5A623",
     LOW: "#00E87A",
   };
+
   return colors[level] || "#00E87A";
 }
 
@@ -128,5 +314,6 @@ export function getRiskClass(level: string): string {
     MEDIUM: "risk-medium badge-medium",
     LOW: "risk-low badge-low",
   };
+
   return classes[level] || "risk-low badge-low";
 }
