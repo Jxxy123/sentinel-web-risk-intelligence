@@ -11,6 +11,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PATCH_VERSION = "2026-07-28-v4-identity-propagation"
 
 
 TEST_FILES = {
@@ -267,11 +268,19 @@ def _patch_orchestrator() -> None:
         label="confirmed identity context helper",
     )
 
-    method_anchor = (
+    legacy_method_anchor = (
         "    async def investigate_vendor(\n"
         "        self,\n"
         "        vendor_name: str,\n"
         "        language: str = \"EN\",\n"
+        "    ) -> dict[str, Any]:\n"
+    )
+    extended_method_anchor = (
+        "    async def investigate_vendor(\n"
+        "        self,\n"
+        "        vendor_name: str,\n"
+        "        language: str = \"EN\",\n"
+        "        identity_context: dict[str, Any] | None = None,\n"
         "    ) -> dict[str, Any]:\n"
     )
     confirmed_method = (
@@ -287,22 +296,75 @@ def _patch_orchestrator() -> None:
         "        report = await self.investigate_vendor(\n"
         "            confirmed[\"canonical_name\"],\n"
         "            language=language,\n"
+        "            identity_context=confirmed,\n"
         "        )\n"
         "        report[\"identity_context\"] = confirmed\n"
         "        raw = report.setdefault(\"raw_intelligence\", {})\n"
         "        raw[\"identity_gate\"] = \"confirmed\"\n"
         "        return report\n"
         "\n"
-        + method_anchor
+        + extended_method_anchor
     )
     text = _replace_once(
         text,
-        method_anchor,
+        legacy_method_anchor,
         confirmed_method,
         label="confirmed orchestrator entrypoint",
     )
 
     path.write_text(text, encoding="utf-8")
+
+
+def _verify_gate_patch() -> None:
+    """Fail fast when the generated gate wiring is incomplete."""
+    orchestrator_text = (
+        ROOT / "agents/orchestrator.py"
+    ).read_text(encoding="utf-8")
+    main_text = (
+        ROOT / "main.py"
+    ).read_text(encoding="utf-8")
+    api_text = (
+        ROOT / "core/vendor_resolution_api.py"
+    ).read_text(encoding="utf-8")
+
+    required_orchestrator_fragments = (
+        "async def investigate_confirmed_vendor(",
+        "identity_context: dict[str, Any] | None = None,",
+        "identity_context=confirmed,",
+        'report["identity_context"] = confirmed',
+        'raw["identity_gate"] = "confirmed"',
+    )
+    required_main_fragments = (
+        "identity_authorization_id: str",
+        "consume_investigation_authorization(",
+        "investigate_confirmed_vendor(",
+    )
+    required_api_fragments = (
+        "issue_investigation_authorization(",
+        'payload["investigation_authorization"]',
+    )
+
+    missing = [
+        f"orchestrator:{fragment}"
+        for fragment in required_orchestrator_fragments
+        if fragment not in orchestrator_text
+    ]
+    missing.extend(
+        f"main:{fragment}"
+        for fragment in required_main_fragments
+        if fragment not in main_text
+    )
+    missing.extend(
+        f"vendor_resolution_api:{fragment}"
+        for fragment in required_api_fragments
+        if fragment not in api_text
+    )
+
+    if missing:
+        raise RuntimeError(
+            "Confirmed investigation gate verification failed: "
+            + "; ".join(missing)
+        )
 
 
 def main() -> None:
@@ -327,6 +389,7 @@ def main() -> None:
         _patch_main()
         _patch_orchestrator()
         _write_gate_tests()
+        _verify_gate_patch()
     except Exception:
         for path, content in originals.items():
             path.write_text(content, encoding="utf-8")
@@ -337,7 +400,10 @@ def main() -> None:
                 path.unlink()
         raise
 
-    print("Confirmed investigation gate applied successfully.")
+    print(
+        "Confirmed investigation gate applied successfully. "
+        f"version={PATCH_VERSION}"
+    )
 
 
 if __name__ == "__main__":
