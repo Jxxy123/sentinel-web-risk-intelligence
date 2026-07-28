@@ -2,3 +2,4 @@
 - Flow: resolve vendor -> authorize -> investigate
 - Branch: testing/enterprise-readiness
 - Scope: frontend only
+- Retry: V2 structure-based JSX insertion anchor
