@@ -1,0 +1,75 @@
+name: Apply Confirmed Investigation Gate
+
+on:
+  push:
+    branches:
+      - testing/enterprise-readiness
+    paths:
+      - backend/tools/run_apply_confirmed_investigation_gate.txt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-confirmed-investigation-gate
+  cancel-in-progress: false
+
+jobs:
+  apply-and-test:
+    name: Apply Gate and Run Backend Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - name: Check out testing branch
+        uses: actions/checkout@v4
+        with:
+          ref: testing/enterprise-readiness
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Apply confirmed investigation gate
+        working-directory: backend
+        run: python tools/apply_confirmed_investigation_gate.py
+
+      - name: Run focused gate tests
+        working-directory: backend
+        run: |
+          pytest -q \
+            tests/test_investigation_authorization.py \
+            tests/test_confirmed_investigation_gate.py \
+            tests/test_confirmed_orchestrator_context.py
+
+      - name: Run complete backend suite
+        working-directory: backend
+        run: pytest tests -q
+
+      - name: Commit synchronized gate implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            backend/main.py \
+            backend/agents/orchestrator.py \
+            backend/core/vendor_resolution_api.py \
+            backend/tests/test_investigation_authorization.py \
+            backend/tests/test_confirmed_investigation_gate.py \
+            backend/tests/test_confirmed_orchestrator_context.py
+          if git diff --cached --quiet; then
+            echo "No implementation changes to commit."
+            exit 0
+          fi
+          git commit -m "fix: enforce confirmed identity before investigation"
+          git push origin HEAD:testing/enterprise-readiness
