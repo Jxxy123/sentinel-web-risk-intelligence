@@ -2,3 +2,4 @@
 - Apply: secure temporary-key voice transcription v1
 - Branch: testing/enterprise-readiness
 - Scope: Speechmatics only
+- Retry: allow tracked frontend env example
