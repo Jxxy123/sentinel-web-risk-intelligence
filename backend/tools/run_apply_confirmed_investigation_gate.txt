@@ -9,3 +9,4 @@ Required behavior:
 - Retry: install pytest dependencies
 - Retry: corrected orchestrator identity-context assertions
 - Retry: propagate sanitized identity context into investigation
+- Retry: verified v4 identity propagation patch
