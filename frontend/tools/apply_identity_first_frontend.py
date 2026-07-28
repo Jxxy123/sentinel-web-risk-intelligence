@@ -27,7 +27,7 @@ PANEL_FILE = (
     / "VendorIdentityPanel.tsx"
 )
 
-PATCH_VERSION = "2026-07-29-identity-first-frontend-v1"
+PATCH_VERSION = "2026-07-29-identity-first-frontend-v2-jsx-anchor"
 
 
 API_CONTENT = r'''const API_BASE =
@@ -966,40 +966,49 @@ def patch_input_and_panel(text: str) -> str:
         1,
     )
 
-    panel_anchor = '''              {error && (
-                <div className="mt-5 max-w-2xl mx-auto p-3.5 rounded-xl flex items-center gap-2.5"'''
-
-    panel_block = '''              {identityResolution && (
-                <VendorIdentityPanel
-                  resolution={identityResolution}
-                  details={identityDetails}
-                  isResolving={isResolvingIdentity}
-                  onDetailsChange={setIdentityDetails}
-                  onRetry={() => {
-                    void handleInvestigate();
-                  }}
-                  onSelectCandidate={
-                    handleCandidateSelection
-                  }
-                  onDismiss={() => {
-                    setIdentityResolution(null);
-                    setIsLoading(false);
-                  }}
-                />
-              )}
-
-'''
-
     if "<VendorIdentityPanel" not in text:
+        error_line_pattern = re.compile(
+            r"(?m)^(?P<indent>[ \t]*)\{error && \($"
+        )
+        error_line_match = error_line_pattern.search(text)
+
         require(
-            panel_anchor in text,
+            error_line_match is not None,
             "Could not find the identity panel insertion anchor.",
         )
-        text = text.replace(
-            panel_anchor,
-            panel_block + panel_anchor,
-            1,
+
+        indent = error_line_match.group("indent")
+        panel_lines = [
+            f"{indent}{{identityResolution && (",
+            f"{indent}  <VendorIdentityPanel",
+            f"{indent}    resolution={{identityResolution}}",
+            f"{indent}    details={{identityDetails}}",
+            f"{indent}    isResolving={{isResolvingIdentity}}",
+            f"{indent}    onDetailsChange={{setIdentityDetails}}",
+            f"{indent}    onRetry={{() => {{",
+            f"{indent}      void handleInvestigate();",
+            f"{indent}    }}}}",
+            f"{indent}    onSelectCandidate={{",
+            f"{indent}      handleCandidateSelection",
+            f"{indent}    }}",
+            f"{indent}    onDismiss={{() => {{",
+            f"{indent}      setIdentityResolution(null);",
+            f"{indent}      setIsLoading(false);",
+            f"{indent}    }}}}",
+            f"{indent}  />",
+            f"{indent})}}",
+            "",
+            "",
+        ]
+        panel_block = "\n".join(panel_lines)
+
+        insertion_index = error_line_match.start()
+        text = (
+            text[:insertion_index]
+            + panel_block
+            + text[insertion_index:]
         )
+
 
     return text
 
