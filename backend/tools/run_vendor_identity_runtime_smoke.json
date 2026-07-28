@@ -2,7 +2,7 @@
   "vendor_name": "Microsoft",
   "website": "https://www.microsoft.com",
   "country": "United States",
-  "city": "",
+  "city": null,
   "industry": "Technology",
   "language": "EN",
   "expected_status": "CONFIRMED",
