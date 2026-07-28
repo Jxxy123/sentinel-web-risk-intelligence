@@ -13,6 +13,10 @@ import IntelligenceFeed from "@/components/dashboard/IntelligenceFeed";
 import LiveAlertsPanel from "@/components/dashboard/LiveAlertsPanel";
 import GovernancePanel from "@/components/dashboard/GovernancePanel";
 import {
+  cleanSpeechmaticsVendorCommand,
+  useSpeechmaticsVoice,
+} from "@/lib/useSpeechmaticsVoice";
+import {
   Shield, Search, AlertTriangle, Activity, Database,
   Zap, Globe, LayoutDashboard, Clock, FileText, Trash2, Download, Mic,
 } from "lucide-react";
@@ -234,7 +238,6 @@ const DICTIONARY: Record<string, Record<string, string>> = {
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [vendorInput, setVendorInput] = useState("");
-  const [isListening, setIsListening] = useState(false);
   const [currentLanguage, setCurrentLanguage] = useState("EN");
   const [currentJob, setCurrentJob] = useState<InvestigationJob | null>(null);
   const [currentReport, setCurrentReport] = useState<RiskReport | null>(null);
@@ -247,49 +250,28 @@ export default function Dashboard() {
   const wsRef = useRef<WebSocket | null>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
+  const {
+    isListening,
+    partialTranscript,
+    voiceStatus,
+    startListening,
+    stopListening,
+  } = useSpeechmaticsVoice({
+    language: currentLanguage,
+    onFinalTranscript: (transcript) => {
+      const cleanedInput =
+        cleanSpeechmaticsVendorCommand(transcript);
+
+      if (cleanedInput) {
+        setVendorInput(cleanedInput);
+      }
+    },
+    onError: (message) => {
+      setError(message || null);
+    },
+  });
+
   const t = DICTIONARY[currentLanguage] || DICTIONARY.EN;
-
-  const startVoiceCommand = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    
-    if (!SpeechRecognition) {
-      alert("Voice control is supported best on desktop Google Chrome or Edge!");
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.lang = 'en-US';
-    recognition.interimResults = false;
-
-    recognition.onstart = () => {
-      setIsListening(true);
-    };
-
-    recognition.onerror = (err: any) => {
-      console.error("Speechmatics Interface Error: ", err);
-      setIsListening(false);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      
-      const cleanedInput = transcript.toLowerCase()
-        .replace("scan ", "")
-        .replace("investigate ", "")
-        .replace("check ", "")
-        .trim();
-      
-      setVendorInput(cleanedInput);
-      handleInvestigate(cleanedInput);
-    };
-
-    recognition.start();
-  };
 
   const translateReportData = (report: RiskReport | null): RiskReport | null => {
     if (!report) return null;
@@ -610,7 +592,7 @@ export default function Dashboard() {
               <div className="flex gap-3">
                 <div className="flex-1 relative">
                   <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input type="text" value={vendorInput} onChange={e => setVendorInput(e.target.value)}
+                  <input type="text" value={isListening && partialTranscript ? partialTranscript : vendorInput} onChange={e => setVendorInput(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && handleInvestigate()}
                     placeholder={t.placeholder}
                     className="search-input w-full pl-12 pr-12 py-4 rounded-xl text-base text-white placeholder-slate-400 bg-slate-950/50 border border-slate-800 focus:border-blue-500 transition-colors" disabled={isLoading} />
@@ -618,14 +600,23 @@ export default function Dashboard() {
                   {/* Glowing Speechmatics Microphone Toggle Button */}
                   <button
                     type="button"
-                    onClick={startVoiceCommand}
+                    onClick={() => {
+                      setError(null);
+                      if (isListening) {
+                        void stopListening();
+                      } else {
+                        void startListening();
+                      }
+                    }}
                     disabled={isLoading}
                     className={`absolute right-4 top-1/2 -translate-y-1/2 p-1.5 rounded-lg transition-all ${
                       isListening 
                         ? 'bg-red-500 text-white animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.5)] border border-red-400' 
                         : 'text-slate-400 hover:text-blue-400 hover:bg-slate-900/50'
                     }`}
-                    title="Voice Command via Speechmatics"
+                    title={isListening
+                      ? "Stop Speechmatics transcription"
+                      : "Start Speechmatics transcription"}
                   >
                     <Mic size={16} />
                   </button>
@@ -644,7 +635,7 @@ export default function Dashboard() {
               {/* Securely Anchored Speechmatics Status Tracker Bar */}
               <div className="flex items-center gap-1.5 px-1 text-[11px] font-mono tracking-wider text-slate-400 transition-all duration-200">
                 <span className={`w-1.5 h-1.5 rounded-full ${isListening ? 'bg-red-500 animate-ping' : 'bg-[#00E87A]'}`}></span>
-                <span>{isListening ? "SPEECHMATICS AUDIO CHANNELS: ACTIVE / LISTENING..." : "SPEECHMATICS VOICE STREAMING: LINKED & READY"}</span>
+                <span>{voiceStatus}</span>
               </div>
 
               <div className="flex items-center gap-3 pt-2 flex-wrap justify-center">
