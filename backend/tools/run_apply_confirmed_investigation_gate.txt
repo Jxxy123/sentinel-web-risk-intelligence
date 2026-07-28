@@ -1,0 +1,8 @@
+Apply the confirmed-identity investigation gate on testing/enterprise-readiness.
+
+Required behavior:
+- /api/vendors/resolve issues a short-lived opaque authorization only for CONFIRMED identity.
+- /api/investigate requires and consumes the single-use authorization.
+- invalid, expired, replayed, mismatched, or non-confirmed identity cannot create a job.
+- authorization tokens never appear in job state, reports, logs, or artifacts.
+- the orchestrator receives only the sanitized confirmed identity snapshot.
