@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - testing/enterprise-readiness
+      - fix/truth-telemetry-hardening
   pull_request:
     branches:
       - main
