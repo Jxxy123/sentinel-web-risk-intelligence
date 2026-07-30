@@ -15,7 +15,7 @@ from core.evidence_validation import (
 )
 
 
-SearchResult = dict[str, str]
+SearchResult = dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -64,7 +64,11 @@ def _build_identity(
 
 def _provider(result: SearchResult) -> str:
     """Return a stable provider label for one result."""
-    provider = str(result.get("source") or result.get("provider") or "").strip()
+    provider = str(
+        result.get("source")
+        or result.get("provider")
+        or ""
+    ).strip()
 
     if provider == "bright_data_remote_mcp":
         return "Remote MCP search_engine"
@@ -72,7 +76,9 @@ def _provider(result: SearchResult) -> str:
     return provider or "SERP API"
 
 
-def _to_documents(search_results: list[SearchResult]) -> list[SourceDocument]:
+def _to_documents(
+    search_results: list[SearchResult],
+) -> list[SourceDocument]:
     """Preserve source boundaries instead of flattening all text."""
     documents: list[SourceDocument] = []
 
@@ -97,7 +103,9 @@ def _to_documents(search_results: list[SearchResult]) -> list[SourceDocument]:
                 title=title,
                 url=url,
                 provider=_provider(result),
-                snippet=str(result.get("snippet", "")).strip(),
+                snippet=str(
+                    result.get("snippet", "")
+                ).strip(),
                 published_at=published_at,
             )
         )
@@ -108,7 +116,7 @@ def _to_documents(search_results: list[SearchResult]) -> list[SourceDocument]:
 def _to_legacy_signals(
     records: tuple[EvidenceRecord, ...],
 ) -> tuple[dict[str, Any], ...]:
-    """Convert only accepted evidence into the existing report signal shape."""
+    """Convert accepted evidence into the existing report signal shape."""
     severity_weights = {
         "critical": 35,
         "high": 20,
@@ -121,24 +129,48 @@ def _to_legacy_signals(
         "high": 3,
         "critical": 4,
     }
-    strongest: dict[tuple[str, str], dict[str, Any]] = {}
+    strongest: dict[
+        tuple[str, str],
+        dict[str, Any],
+    ] = {}
 
     for record in records:
-        key = (record.category, record.indicator.lower())
+        key = (
+            record.category,
+            record.indicator.lower(),
+        )
         candidate = {
             "category": record.category,
             "severity": record.severity,
             "keyword": record.indicator,
-            "weight": severity_weights.get(record.severity, 0),
+            "weight": severity_weights.get(
+                record.severity,
+                0,
+            ),
         }
         existing = strongest.get(key)
 
-        if existing is None or severity_rank.get(
-            record.severity, 0
-        ) > severity_rank.get(str(existing.get("severity", "")), 0):
+        if (
+            existing is None
+            or severity_rank.get(
+                record.severity,
+                0,
+            )
+            > severity_rank.get(
+                str(
+                    existing.get(
+                        "severity",
+                        "",
+                    )
+                ),
+                0,
+            )
+        ):
             strongest[key] = candidate
 
-    return tuple(strongest.values())
+    return tuple(
+        strongest.values()
+    )
 
 
 def _verified_results(
@@ -146,25 +178,50 @@ def _verified_results(
     records: tuple[EvidenceRecord, ...],
 ) -> tuple[SearchResult, ...]:
     """Return only results that produced accepted evidence."""
-    verified_urls = {record.source_url for record in records if record.source_url}
+    verified_urls = {
+        record.source_url
+        for record in records
+        if record.source_url
+    }
+    seen_urls: set[str] = set()
+    selected: list[SearchResult] = []
 
-    return tuple(
-        result
-        for result in search_results
-        if str(result.get("url", "")).strip() in verified_urls
-    )
+    for result in search_results:
+        url = str(
+            result.get(
+                "url",
+                "",
+            )
+        ).strip()
+
+        if (
+            not url
+            or url not in verified_urls
+            or url in seen_urls
+        ):
+            continue
+
+        selected.append(result)
+        seen_urls.add(url)
+
+    return tuple(selected)
 
 
-def _verified_context(records: tuple[EvidenceRecord, ...]) -> str:
-    """Build source-linked CrewAI context using accepted evidence only."""
+def _verified_context(
+    records: tuple[EvidenceRecord, ...],
+) -> str:
+    """Build source-linked CrewAI context from accepted evidence only."""
     lines: list[str] = []
 
     for record in records[:12]:
         lines.append(
             "- "
-            f"{record.category.title()} / {record.severity.upper()} / "
-            f"{record.indicator}: {record.evidence_excerpt} "
-            f"[Source: {record.source_title}]({record.source_url})"
+            f"{record.category.title()} / "
+            f"{record.severity.upper()} / "
+            f"{record.indicator}: "
+            f"{record.evidence_excerpt} "
+            f"[Source: {record.source_title}]"
+            f"({record.source_url})"
         )
 
     return "\n".join(lines)
@@ -175,38 +232,106 @@ def assess_search_results(
     identity_context: dict[str, Any] | None,
     search_results: list[SearchResult],
 ) -> OrchestratorEvidenceBundle:
-    """Validate and score only source-linked, directly attributed evidence."""
-    identity = _build_identity(vendor_name, identity_context)
-    candidates = extract_evidence_candidates(identity, _to_documents(search_results))
-    records = validate_evidence_candidates(candidates)
-    context_confidence = (
-        float(identity_context.get("identity_confidence", identity.confidence))
-        if isinstance(identity_context, dict)
-        else identity.confidence
+    """Validate and score only source-linked, attributed evidence."""
+    identity = _build_identity(
+        vendor_name,
+        identity_context,
     )
+    candidates = extract_evidence_candidates(
+        identity,
+        _to_documents(
+            search_results
+        ),
+    )
+    records = validate_evidence_candidates(
+        candidates
+    )
+
+    context_confidence = identity.confidence
+
+    if isinstance(
+        identity_context,
+        dict,
+    ):
+        try:
+            candidate_confidence = float(
+                identity_context.get(
+                    "identity_confidence",
+                    identity.confidence,
+                )
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            candidate_confidence = (
+                identity.confidence
+            )
+
+        context_confidence = max(
+            0.0,
+            min(
+                1.0,
+                candidate_confidence,
+            ),
+        )
+
     assessment = score_verified_evidence(
         records,
-        identity_confidence=context_confidence,
+        identity_confidence=(
+            context_confidence
+        ),
     )
-    verified = tuple(assessment.verified_signals)
-    rejected = tuple(assessment.rejected_signals)
-    score_available = assessment.risk_score is not None
+    verified = tuple(
+        assessment.verified_signals
+    )
+    rejected = tuple(
+        assessment.rejected_signals
+    )
+    score_available = (
+        assessment.risk_score is not None
+    )
 
     return OrchestratorEvidenceBundle(
         assessment=assessment,
         verified_records=verified,
         rejected_records=rejected,
-        legacy_signals=_to_legacy_signals(verified),
-        crew_search_results=_verified_results(search_results, verified),
-        crew_evidence_context=_verified_context(verified),
+        legacy_signals=(
+            _to_legacy_signals(
+                verified
+            )
+        ),
+        crew_search_results=(
+            _verified_results(
+                search_results,
+                verified,
+            )
+        ),
+        crew_evidence_context=(
+            _verified_context(
+                verified
+            )
+        ),
         score_available=score_available,
-        score=assessment.risk_score if score_available else 0,
-        level=assessment.risk_level if score_available else "LOW",
-        confidence=assessment.confidence_score,
+        score=(
+            assessment.risk_score
+            if score_available
+            else 0
+        ),
+        level=(
+            assessment.risk_level
+            if score_available
+            else "LOW"
+        ),
+        confidence=(
+            assessment.confidence_score
+        ),
     )
 
 
-def serialize_evidence_record(record: EvidenceRecord) -> dict[str, Any]:
+def serialize_evidence_record(
+    record: EvidenceRecord,
+) -> dict[str, Any]:
     """Return a safe audit representation of one evidence decision."""
     return {
         "category": record.category,
@@ -214,40 +339,72 @@ def serialize_evidence_record(record: EvidenceRecord) -> dict[str, Any]:
         "indicator": record.indicator,
         "source_url": record.source_url,
         "source_title": record.source_title,
-        "source_provider": record.source_provider,
-        "source_quality": record.source_quality,
-        "publication_date": record.publication_date,
-        "evidence_excerpt": record.evidence_excerpt,
-        "entity_match": record.entity_match,
-        "direct_claim": record.direct_claim,
+        "source_provider": (
+            record.source_provider
+        ),
+        "source_quality": (
+            record.source_quality
+        ),
+        "publication_date": (
+            record.publication_date
+        ),
+        "evidence_excerpt": (
+            record.evidence_excerpt
+        ),
+        "entity_match": (
+            record.entity_match
+        ),
+        "direct_claim": (
+            record.direct_claim
+        ),
         "negated": record.negated,
-        "hypothetical": record.hypothetical,
-        "protective_context": record.protective_context,
-        "corroboration_count": record.corroboration_count,
-        "independent_domains": list(record.independent_domains),
+        "hypothetical": (
+            record.hypothetical
+        ),
+        "protective_context": (
+            record.protective_context
+        ),
+        "corroboration_count": (
+            record.corroboration_count
+        ),
+        "independent_domains": list(
+            record.independent_domains
+        ),
         "verified": record.verified,
-        "rejection_reason": record.rejection_reason,
+        "rejection_reason": (
+            record.rejection_reason
+        ),
     }
 
 
 def build_verified_key_findings(
     records: tuple[EvidenceRecord, ...],
 ) -> list[str]:
-    """Build factual findings directly from accepted evidence excerpts."""
+    """Build factual findings from accepted evidence excerpts."""
     findings: list[str] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[
+        tuple[str, str, str]
+    ] = set()
 
     for record in records:
-        key = (record.category, record.indicator.lower(), record.source_url)
+        key = (
+            record.category,
+            record.indicator.lower(),
+            record.source_url,
+        )
 
         if key in seen:
             continue
 
         seen.add(key)
-        excerpt = " ".join(record.evidence_excerpt.split())
+        excerpt = " ".join(
+            record.evidence_excerpt.split()
+        )
         findings.append(
-            f"{record.category.title()} ({record.severity.upper()}): "
-            f"{record.indicator}. Evidence: {excerpt[:240]} "
+            f"{record.category.title()} "
+            f"({record.severity.upper()}): "
+            f"{record.indicator}. "
+            f"Evidence: {excerpt[:240]} "
             f"Source: {record.source_title}."
         )
 
@@ -261,52 +418,73 @@ def build_insufficient_evidence_language(
     vendor_name: str,
     assessment: EvidenceAssessment,
 ) -> dict[str, Any]:
-    """Return non-misleading language when no defensible score exists."""
-    rejected_count = len(assessment.rejected_signals)
+    """Return truthful language when no defensible score exists."""
+    rejected_count = len(
+        assessment.rejected_signals
+    )
 
     return {
         "executive_summary": (
-            f"Sentinel could not assign a defensible point-in-time vendor-risk "
-            f"score to {vendor_name}. The collected public material did not "
-            "contain enough verified, directly attributed, and sufficiently "
-            "corroborated evidence. Missing public evidence is not treated as "
-            "evidence of low risk. Additional authoritative due-diligence "
-            "material is required before making a risk decision."
+            "Sentinel could not assign a defensible "
+            "point-in-time vendor-risk score to "
+            f"{vendor_name}. The collected public "
+            "material did not contain enough verified, "
+            "directly attributed, and sufficiently "
+            "corroborated evidence. Missing public "
+            "evidence is not treated as evidence of low "
+            "risk. Additional authoritative due-diligence "
+            "material is required before making a risk "
+            "decision."
         ),
         "risk_headline": (
-            f"Insufficient verified evidence is available to assign "
-            f"{vendor_name} a defensible risk level."
+            "Insufficient verified evidence is available "
+            f"to assign {vendor_name} a defensible risk "
+            "level."
         ),
-        # Compatibility placeholder until the frontend supports an unavailable
-        # category. The explicit assessment status prevents LOW interpretation.
-        "primary_risk_category": "Operational",
+        # Existing API/frontend compatibility placeholder.
+        # risk_score_available=false prevents LOW interpretation.
+        "primary_risk_category": (
+            "Operational"
+        ),
         "key_findings": [
             assessment.coverage_message,
             (
-                f"{rejected_count} candidate evidence records were rejected "
-                "because they failed attribution, context, source-quality, "
-                "or corroboration requirements."
+                f"{rejected_count} candidate evidence "
+                "records were rejected because they "
+                "failed attribution, context, source "
+                "quality, or corroboration requirements."
             ),
             (
-                "No verified risk score or disruption estimate should be "
-                "interpreted from this assessment."
+                "No verified risk score or disruption "
+                "estimate should be interpreted from this "
+                "assessment."
             ),
         ],
         "risk_trajectory": "Stable",
         "recommended_actions": [
-            "Review the rejected-evidence audit trail before relying on any claim.",
             (
-                "Collect authoritative regulatory, company, financial, and "
-                "operational records for additional verification."
+                "Review the rejected-evidence audit trail "
+                "before relying on any claim."
             ),
             (
-                "Repeat the point-in-time assessment only after stronger "
-                "source-linked evidence becomes available."
+                "Collect authoritative regulatory, "
+                "company, financial, and operational "
+                "records for additional verification."
+            ),
+            (
+                "Repeat the point-in-time assessment only "
+                "after stronger source-linked evidence "
+                "becomes available."
             ),
         ],
         "monitoring_signals": [
-            "New authoritative regulatory findings",
-            "Direct company disclosures or independently corroborated incidents",
+            (
+                "New authoritative regulatory findings"
+            ),
+            (
+                "Direct company disclosures or "
+                "independently corroborated incidents"
+            ),
         ],
         "time_horizon": "Near-term",
     }
