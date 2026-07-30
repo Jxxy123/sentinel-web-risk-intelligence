@@ -264,19 +264,72 @@ def _patch_offline_ai_pipeline(
         }
     ]
 
+    def fake_assess_search_results(
+        vendor_name,
+        identity_context,
+        search_results,
+    ):
+        unique_urls = {
+            str(result.get("url", "")).strip()
+            for result in search_results
+            if str(result.get("url", "")).strip()
+        }
+
+        if not search_results:
+            assessment = SimpleNamespace(
+                status="INSUFFICIENT_EVIDENCE",
+                unique_source_count=0,
+                authoritative_source_count=0,
+                coverage_message=(
+                    "Insufficient verified public evidence is available "
+                    "to assign a defensible risk score."
+                ),
+                rejected_signals=(),
+            )
+
+            return SimpleNamespace(
+                assessment=assessment,
+                verified_records=(),
+                rejected_records=(),
+                legacy_signals=(),
+                crew_search_results=(),
+                crew_evidence_context="",
+                score_available=False,
+                score=0,
+                level="LOW",
+                confidence=0.20,
+            )
+
+        assessment = SimpleNamespace(
+            status="COMPLETED",
+            unique_source_count=len(unique_urls),
+            authoritative_source_count=0,
+            coverage_message=(
+                "The score is based only on verified, source-linked, "
+                "contextually attributed public evidence."
+            ),
+            rejected_signals=(),
+        )
+
+        return SimpleNamespace(
+            assessment=assessment,
+            verified_records=(),
+            rejected_records=(),
+            legacy_signals=tuple(deterministic_signals),
+            crew_search_results=tuple(search_results),
+            crew_evidence_context=(
+                "Controlled verified evidence context."
+            ),
+            score_available=True,
+            score=25,
+            level="MEDIUM",
+            confidence=0.82,
+        )
+
     monkeypatch.setattr(
         orchestrator_module,
-        "analyze_text_for_signals",
-        lambda text: list(deterministic_signals),
-    )
-    monkeypatch.setattr(
-        orchestrator_module,
-        "calculate_risk_score",
-        lambda signals: (
-            25,
-            "MEDIUM",
-            0.82,
-        ),
+        "assess_search_results",
+        fake_assess_search_results,
     )
     monkeypatch.setattr(
         orchestrator_module,
@@ -504,7 +557,7 @@ def test_mcp_scraper_is_used_only_when_unlocker_returns_no_content(
     )
     assert captured["task_input"][
         "scraped_content"
-    ] == expected_scraped_context
+    ] == "Controlled verified evidence context."
     assert report["raw_intelligence"][
         "scraped_content_chars"
     ] == len(expected_scraped_context)
@@ -544,9 +597,15 @@ def test_empty_mcp_results_are_not_claimed_as_used(
     assert report["raw_intelligence"][
         "bright_data_tools_used"
     ] == []
-    assert captured["task_input"][
-        "tools_used"
-    ] == []
+    assert "task_input" not in captured
+    assert report["risk_score_available"] is False
+    assert (
+        report["evidence_assessment_status"]
+        == "INSUFFICIENT_EVIDENCE"
+    )
+    assert report["raw_intelligence"][
+        "llm_execution_status"
+    ] == "skipped_insufficient_verified_evidence"
     assert report["raw_intelligence"][
         "search_results_count"
     ] == 0

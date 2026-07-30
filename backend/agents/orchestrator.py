@@ -406,9 +406,9 @@ def build_tasks(
         scraped_content[:MAX_SCRAPED_CONTENT_FOR_TASK]
         if scraped_content
         else (
-            "No verified supplementary evidence was accepted. Do not infer "
-            "facts from missing data; continue only with accepted search "
-            "evidence and reduce confidence accordingly."
+            "No protected-source content was accepted as verified supplementary "
+            "evidence. Do not infer facts from missing data; continue only with "
+            "accepted search evidence and reduce confidence accordingly."
         )
     )
     deterministic_guidance = (
