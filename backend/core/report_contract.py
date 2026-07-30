@@ -210,16 +210,34 @@ def _validate_sources(
 
         seen_urls.add(url)
 
-    mcp_results_added = raw_intelligence.get(
-        "mcp_unique_results_added",
+    verified_mcp_results = raw_intelligence.get(
+        "verified_mcp_result_count",
         0,
     )
 
-    if (
-        isinstance(mcp_results_added, int)
-        and mcp_results_added > 0
-        and "Remote MCP search_engine" in tools_used
-    ):
+    _require(
+        isinstance(verified_mcp_results, int)
+        and not isinstance(
+            verified_mcp_results,
+            bool,
+        )
+        and verified_mcp_results >= 0,
+        (
+            "verified_mcp_result_count must be "
+            "a non-negative integer."
+        ),
+    )
+
+    if verified_mcp_results > 0:
+        _require(
+            "Remote MCP search_engine"
+            in tools_used,
+            (
+                "Verified MCP evidence exists but the "
+                "Remote MCP search tool was not recorded."
+            ),
+        )
+
         _require(
             any(
                 "mcp" in _clean_text(
@@ -228,7 +246,7 @@ def _validate_sources(
                 for source in sources
             ),
             (
-                "Remote MCP added unique results but no MCP "
+                "Verified MCP evidence exists but no MCP "
                 "citation appears in the final source set."
             ),
         )

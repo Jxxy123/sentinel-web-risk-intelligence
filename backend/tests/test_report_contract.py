@@ -77,6 +77,7 @@ def _valid_report() -> dict:
         "raw_intelligence": {
             "search_results_count": 29,
             "mcp_unique_results_added": 9,
+            "verified_mcp_result_count": 1,
             "bright_data_tools_used": [
                 "SERP API",
                 "Remote MCP search_engine",
@@ -142,6 +143,27 @@ def test_mcp_results_require_mcp_citation() -> None:
         validate_calibrated_report_contract(
             report
         )
+
+def test_rejected_mcp_results_do_not_require_citation() -> None:
+    report = _valid_report()
+
+    report["raw_intelligence"][
+        "mcp_unique_results_added"
+    ] = 9
+    report["raw_intelligence"][
+        "verified_mcp_result_count"
+    ] = 0
+
+    report["sources"] = [
+        source
+        for source in report["sources"]
+        if "mcp"
+        not in source["source"].lower()
+    ]
+
+    validate_calibrated_report_contract(
+        report
+    )
 
 
 def test_mcp_scraper_requires_successful_provenance() -> None:

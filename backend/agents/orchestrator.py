@@ -1244,6 +1244,18 @@ class SentinelOrchestrator:
             max_mcp=4,
         )
 
+        verified_mcp_result_count = sum(
+            1
+            for result in crew_search_results
+            if "mcp"
+            in str(
+                result.get(
+                    "source",
+                    "",
+                )
+            ).lower()
+        )
+
         generated_at = datetime.now(
             timezone.utc
         ).isoformat()
@@ -1346,6 +1358,9 @@ class SentinelOrchestrator:
                 ),
                 "mcp_unique_results_added": (
                     mcp_results_added
+                ),
+                "verified_mcp_result_count": (
+                    verified_mcp_result_count
                 ),
                 "scraped_content_chars": len(
                     scraped_content
