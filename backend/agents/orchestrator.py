@@ -23,15 +23,19 @@ from core.brightdata import (
 )
 from core.brightdata_remote_mcp import remote_mcp_client
 from core.config import settings
+from core.orchestrator_truth import (
+    assess_search_results,
+    build_insufficient_evidence_language,
+    build_verified_key_findings,
+    serialize_evidence_record,
+)
 from core.report_calibration import (
     build_calibrated_report_language,
     build_evidence_provenance,
     select_balanced_sources,
 )
 from core.risk_engine import (
-    analyze_text_for_signals,
     calculate_disruption_probability,
-    calculate_risk_score,
     format_signals_for_report,
 )
 
@@ -54,7 +58,6 @@ MAX_VENDOR_NAME_LENGTH = 200
 MAX_SEARCH_RESULTS_FOR_TASK = 8
 MAX_SCRAPED_CONTENT_FOR_TASK = 4_000
 MAX_PROXY_CONTEXT_CHARACTERS = 1_000
-MAX_RAW_CONTENT_FOR_SCORING = 4_000
 MAX_SOURCE_RECORDS_IN_REPORT = 12
 
 CREW_MAX_ATTEMPTS = 4
@@ -385,8 +388,8 @@ def build_tasks(
     scraped_content: str,
     agents: dict[str, Agent],
     language: str = "EN",
-    pre_score: int = 5,
-    pre_level: str = "LOW",
+    pre_score: int | None = None,
+    pre_level: str | None = None,
     tools_used: Optional[list[str]] = None,
 ) -> list[Task]:
     """Build the six sequential, evidence-grounded CrewAI tasks."""
@@ -403,9 +406,21 @@ def build_tasks(
         scraped_content[:MAX_SCRAPED_CONTENT_FOR_TASK]
         if scraped_content
         else (
-            "No protected-source content was retrieved. Do not infer "
-            "facts from missing data; continue with verified search "
+            "No verified supplementary evidence was accepted. Do not infer "
+            "facts from missing data; continue only with accepted search "
             "evidence and reduce confidence accordingly."
+        )
+    )
+    deterministic_guidance = (
+        (
+            f"- Verified-evidence score: {pre_score}/100\n"
+            f"- Algorithmic threat level: {pre_level}"
+        )
+        if pre_score is not None and pre_level is not None
+        else (
+            "- Evidence assessment: INSUFFICIENT_EVIDENCE\n"
+            "- No defensible risk score or threat level is available.\n"
+            "- Do not reinterpret missing evidence as LOW risk."
         )
     )
 
@@ -437,10 +452,9 @@ Return a structured evidence analysis.
 
     task_scraping = Task(
         description=f"""
-Review the content retrieved for **{vendor_name}** from protected or
-supplementary public sources.
+Review the accepted, source-linked evidence context for **{vendor_name}**.
 
-SCRAPED CONTENT:
+VERIFIED SUPPLEMENTARY EVIDENCE:
 {scrape_context}
 
 Your responsibilities:
@@ -506,8 +520,7 @@ Return a structured, evidence-grounded profile.
 Generate a calibrated forward-looking assessment for **{vendor_name}**.
 
 DETERMINISTIC GUIDANCE:
-- Keyword risk score: {pre_score}/100
-- Algorithmic threat level: {pre_level}
+{deterministic_guidance}
 
 Your responsibilities:
 1. Estimate operational disruption probability for the next 90 days.
@@ -531,8 +544,7 @@ Return a predictive assessment with uncertainty.
 Generate the final executive intelligence report for **{vendor_name}**.
 
 DETERMINISTIC GUIDANCE:
-- Calculated keyword score: {pre_score}/100
-- Algorithmic threat level: {pre_level}
+{deterministic_guidance}
 
 ACTUALLY USED BRIGHT DATA SERVICES:
 {tools_json}
@@ -540,6 +552,7 @@ ACTUALLY USED BRIGHT DATA SERVICES:
 SANITY REQUIREMENTS:
 - Override an inflated algorithmic level when verified evidence does not
   support it.
+- Do not convert INSUFFICIENT_EVIDENCE into a LOW-risk conclusion.
 - Do not claim continuous monitoring or streaming unless explicitly enabled.
 - Do not list a Bright Data service that is absent from the supplied list.
 - State evidence limitations clearly.
@@ -1016,98 +1029,131 @@ class SentinelOrchestrator:
             50,
         )
 
-        raw_search_text = " ".join(
-            (
-                result.get("snippet", "")
-                + " "
-                + result.get("title", "")
-            )
-            for result in search_results
-        )
-        raw_pool = (
-            raw_search_text
-            + " "
-            + scraped_content[:MAX_RAW_CONTENT_FOR_SCORING]
-        ).strip()
-
-        pre_signals = analyze_text_for_signals(
-            raw_pool
-        )
-        (
-            pre_score,
-            pre_level,
-            pre_confidence,
-        ) = calculate_risk_score(
-            pre_signals
-        )
-
-        active_llm = self.llm or get_llm()
-
-        agents = {
-            "recon": build_recon_agent(active_llm),
-            "scraping": build_scraping_agent(active_llm),
-            "verification": build_verification_agent(
-                active_llm
-            ),
-            "intelligence": build_intelligence_agent(
-                active_llm
-            ),
-            "prediction": build_prediction_agent(
-                active_llm
-            ),
-            "reporting": build_reporting_agent(
-                active_llm
-            ),
-        }
-
-        tasks = build_tasks(
+        evidence_bundle = assess_search_results(
             normalized_vendor,
+            identity_context,
             search_results,
-            scraped_content,
-            agents,
-            language=normalized_language,
-            pre_score=pre_score,
-            pre_level=pre_level,
-            tools_used=tools_used,
+        )
+        evidence_assessment = evidence_bundle.assessment
+        verified_records = evidence_bundle.verified_records
+        rejected_records = evidence_bundle.rejected_records
+        pre_signals = list(
+            evidence_bundle.legacy_signals
+        )
+        score_available = evidence_bundle.score_available
+        pre_score = (
+            evidence_bundle.score
+            if score_available
+            else None
+        )
+        pre_level = (
+            evidence_bundle.level
+            if score_available
+            else None
+        )
+        pre_confidence = evidence_bundle.confidence
+        crew_search_results = list(
+            evidence_bundle.crew_search_results
+        )
+        crew_evidence_context = (
+            evidence_bundle.crew_evidence_context
         )
 
-        await self._emit_progress(
-            "agents",
-            "Six AI agents are running the evidence review...",
-            65,
-        )
-
-        crew = Crew(
-            agents=list(agents.values()),
-            tasks=tasks,
-            process=Process.sequential,
-            max_rpm=3,
-            verbose=False,
+        print(
+            "[EVIDENCE VALIDATION] "
+            f"verified={len(verified_records)}; "
+            f"rejected={len(rejected_records)}; "
+            f"status={evidence_assessment.status}"
         )
 
         raw_output = "{}"
+        llm_execution_status = (
+            "skipped_insufficient_verified_evidence"
+        )
 
-        try:
-            raw_output = await asyncio.wait_for(
-                asyncio.to_thread(
-                    self._kickoff_crew_with_retry,
-                    crew,
+        if score_available:
+            active_llm = self.llm or get_llm()
+
+            agents = {
+                "recon": build_recon_agent(active_llm),
+                "scraping": build_scraping_agent(active_llm),
+                "verification": build_verification_agent(
+                    active_llm
                 ),
-                timeout=CREW_TIMEOUT_SECONDS,
+                "intelligence": build_intelligence_agent(
+                    active_llm
+                ),
+                "prediction": build_prediction_agent(
+                    active_llm
+                ),
+                "reporting": build_reporting_agent(
+                    active_llm
+                ),
+            }
+
+            tasks = build_tasks(
+                normalized_vendor,
+                crew_search_results,
+                crew_evidence_context,
+                agents,
+                language=normalized_language,
+                pre_score=pre_score,
+                pre_level=pre_level,
+                tools_used=tools_used,
             )
-            print(
-                "[CREW] Completed; "
-                f"output_characters={len(raw_output)}"
+
+            await self._emit_progress(
+                "agents",
+                "Six AI agents are reviewing verified evidence...",
+                65,
             )
-        except asyncio.TimeoutError:
-            print(
-                "[CREW ERROR] Investigation exceeded "
-                f"{CREW_TIMEOUT_SECONDS} seconds."
+
+            crew = Crew(
+                agents=list(agents.values()),
+                tasks=tasks,
+                process=Process.sequential,
+                max_rpm=3,
+                verbose=False,
             )
-        except Exception as error:
-            print(
-                "[CREW ERROR] "
-                f"error={type(error).__name__}"
+            llm_execution_status = "running"
+
+            try:
+                raw_output = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self._kickoff_crew_with_retry,
+                        crew,
+                    ),
+                    timeout=CREW_TIMEOUT_SECONDS,
+                )
+                llm_execution_status = (
+                    "completed"
+                    if raw_output.strip() not in {"", "{}"}
+                    else "completed_without_structured_output"
+                )
+                print(
+                    "[CREW] Completed; "
+                    f"output_characters={len(raw_output)}"
+                )
+            except asyncio.TimeoutError:
+                llm_execution_status = "timeout_fallback"
+                print(
+                    "[CREW ERROR] Investigation exceeded "
+                    f"{CREW_TIMEOUT_SECONDS} seconds."
+                )
+            except Exception as error:
+                llm_execution_status = "error_fallback"
+                print(
+                    "[CREW ERROR] "
+                    f"error={type(error).__name__}"
+                )
+        else:
+            await self._emit_progress(
+                "verification",
+                (
+                    "Verification found insufficient directly attributed "
+                    "evidence; AI synthesis was skipped."
+                ),
+                65,
             )
 
         await self._emit_progress(
@@ -1120,11 +1166,19 @@ class SentinelOrchestrator:
             raw_output
         )
 
-        # Final scoring is derived only from collected source evidence.
-        # LLM-generated wording is never rescanned as if it were evidence.
+        # Final metrics are derived only from verified, source-linked evidence.
+        # LLM wording and rejected candidates never influence the score.
         signals = pre_signals
-        score = pre_score
-        level = pre_level
+        score = (
+            evidence_bundle.score
+            if score_available
+            else 0
+        )
+        level = (
+            evidence_bundle.level
+            if score_available
+            else "LOW"
+        )
         confidence = pre_confidence
 
         disruption_probability = (
@@ -1132,6 +1186,8 @@ class SentinelOrchestrator:
                 score,
                 signals,
             )
+            if score_available
+            else 0.0
         )
         formatted_signals = format_signals_for_report(
             signals
@@ -1143,30 +1199,46 @@ class SentinelOrchestrator:
             92,
         )
 
-        source_count = len(
-            search_results
+        source_count = (
+            evidence_assessment.unique_source_count
         )
 
-        calibrated_language = (
-            build_calibrated_report_language(
-                vendor_name=normalized_vendor,
-                score=score,
-                level=level,
-                confidence=confidence,
-                disruption_probability=(
-                    disruption_probability
-                ),
-                formatted_signals=(
-                    formatted_signals
-                ),
-                source_count=source_count,
-                tools_used=tools_used,
-                llm_report=llm_report,
+        if score_available:
+            calibrated_language = (
+                build_calibrated_report_language(
+                    vendor_name=normalized_vendor,
+                    score=score,
+                    level=level,
+                    confidence=confidence,
+                    disruption_probability=(
+                        disruption_probability
+                    ),
+                    formatted_signals=(
+                        formatted_signals
+                    ),
+                    source_count=source_count,
+                    tools_used=tools_used,
+                    llm_report=llm_report,
+                )
             )
-        )
+            verified_findings = build_verified_key_findings(
+                verified_records
+            )
+
+            if verified_findings:
+                calibrated_language["key_findings"] = (
+                    verified_findings
+                )
+        else:
+            calibrated_language = (
+                build_insufficient_evidence_language(
+                    normalized_vendor,
+                    evidence_assessment,
+                )
+            )
 
         selected_sources = select_balanced_sources(
-            search_results,
+            crew_search_results,
             max_total=MAX_SOURCE_RECORDS_IN_REPORT,
             max_serp=8,
             max_mcp=4,
@@ -1178,6 +1250,10 @@ class SentinelOrchestrator:
 
         final_report: dict[str, Any] = {
             "vendor_name": normalized_vendor,
+            "evidence_assessment_status": (
+                evidence_assessment.status
+            ),
+            "risk_score_available": score_available,
             "risk_score": score,
             "risk_level": level,
             "confidence_score": confidence,
@@ -1230,8 +1306,43 @@ class SentinelOrchestrator:
                 evidence_provenance
             ),
             "raw_intelligence": {
-                "search_results_count": (
-                    source_count
+                "evidence_assessment_status": (
+                    evidence_assessment.status
+                ),
+                "risk_score_available": score_available,
+                "risk_metric_compatibility_note": (
+                    "risk_score, risk_level, and disruption_probability are "
+                    "compatibility placeholders when risk_score_available "
+                    "is false."
+                ),
+                "verified_evidence_count": len(
+                    verified_records
+                ),
+                "rejected_evidence_count": len(
+                    rejected_records
+                ),
+                "verified_source_count": (
+                    evidence_assessment.unique_source_count
+                ),
+                "authoritative_source_count": (
+                    evidence_assessment.authoritative_source_count
+                ),
+                "evidence_coverage_message": (
+                    evidence_assessment.coverage_message
+                ),
+                "verified_evidence": [
+                    serialize_evidence_record(record)
+                    for record in verified_records
+                ],
+                "rejected_evidence": [
+                    serialize_evidence_record(record)
+                    for record in rejected_records
+                ],
+                "search_results_count": len(
+                    search_results
+                ),
+                "verified_search_result_count": len(
+                    crew_search_results
                 ),
                 "mcp_unique_results_added": (
                     mcp_results_added
@@ -1275,6 +1386,9 @@ class SentinelOrchestrator:
                 "evidence_provenance": (
                     evidence_provenance
                 ),
+                "llm_execution_status": (
+                    llm_execution_status
+                ),
                 "llm_supporting_fields_received": (
                     sorted(
                         llm_report.keys()
@@ -1283,7 +1397,10 @@ class SentinelOrchestrator:
                     else []
                 ),
                 "scoring_source": (
-                    "collected_live_evidence"
+                    "verified_source_linked_evidence"
+                ),
+                "scoring_method": (
+                    "verified_sentence_level_evidence"
                 ),
                 "language_authority": (
                     "deterministic_report_calibration"
