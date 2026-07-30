@@ -82,7 +82,7 @@ def _valid_report() -> dict:
                 "Remote MCP search_engine",
                 "Remote MCP scrape_as_markdown",
             ],
-            "scoring_source": "collected_live_evidence",
+            "scoring_source": "verified_source_linked_evidence",
             "language_authority": (
                 "deterministic_report_calibration"
             ),

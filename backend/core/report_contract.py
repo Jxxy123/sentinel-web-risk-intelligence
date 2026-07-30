@@ -448,10 +448,10 @@ def validate_calibrated_report_contract(
         raw_intelligence.get(
             "scoring_source"
         )
-        == "collected_live_evidence",
+        == "verified_source_linked_evidence",
         (
             "Final scoring_source must be "
-            "collected_live_evidence."
+            "verified_source_linked_evidence."
         ),
     )
     _require(
