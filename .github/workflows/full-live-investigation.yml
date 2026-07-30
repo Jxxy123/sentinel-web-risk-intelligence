@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - testing/enterprise-readiness
+      - fix/truth-telemetry-hardening
     paths:
       - backend/tools/run_full_live_investigation_*.txt
 
