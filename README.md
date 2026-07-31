@@ -1,787 +1,848 @@
 <div align="center">
-
 <br />
-
 <img src="https://img.shields.io/badge/SENTINEL-WEB--RISK%20INTELLIGENCE-0066FF?style=for-the-badge&logo=shield&logoColor=white&labelColor=050810" alt="Sentinel Web-Risk Intelligence" />
 
-<br /><br />
 
-# 🛡️ Sentinel Web-Risk Intelligence
 
-### Autonomous Predictive Vendor Risk Intelligence Platform
-
-**Powered by Bright Data · Transcribed via Speechmatics · Built with CrewAI**
-
+🛡️ Sentinel Web-Risk Intelligence
+Identity-First, Evidence-Grounded Vendor Risk Intelligence
+Bright Data live-web collection · CrewAI orchestration · Speechmatics real-time voice input
 <br />
-
-[![MIT License](https://img.shields.io/badge/License-MIT-00E87A?style=flat-square&logoColor=white)](./LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
-[![Next.js](https://img.shields.io/badge/Next.js-14-black?style=flat-square&logo=next.js&logoColor=white)](https://nextjs.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![CrewAI](https://img.shields.io/badge/CrewAI-Multi--Agent-FF6B00?style=flat-square&logoColor=white)](https://crewai.com)
-[![Bright Data](https://img.shields.io/badge/Bright%20Data-Powered-0066FF?style=flat-square&logoColor=white)](https://brightdata.com)
-[![Speechmatics](https://img.shields.io/badge/Speechmatics-Voice%20Ingestion-FF2D55?style=flat-square&logo=microphone&logoColor=white)](https://speechmatics.com)
-[![Hackathon](https://img.shields.io/badge/lablab.ai-Hackathon%202026-7B61FF?style=flat-square&logoColor=white)](https://lablab.ai)
-
+![MIT License](https://img.shields.io/badge/License-MIT-00E87A?style=flat-square)
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-14-black?style=flat-square&logo=next.js&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi&logoColor=white)
+![CrewAI](https://img.shields.io/badge/CrewAI-Multi--Agent-FF6B00?style=flat-square)
+![Bright Data](https://img.shields.io/badge/Bright%20Data-Live%20Web%20Providers-0066FF?style=flat-square)
+![Speechmatics](https://img.shields.io/badge/Speechmatics-Secure%20Realtime%20Voice-FF2D55?style=flat-square&logo=microphone&logoColor=white)
+![Backend Tests](https://github.com/Jxxy123/sentinel-web-risk-intelligence/actions/workflows/backend-tests.yml/badge.svg)
 <br />
-
-> *"Traditional risk tools trust vendor-submitted data. Sentinel trusts nothing — and verifies everything."*
-
+> Sentinel does not score a company until its identity is confirmed and the collected claims survive attribution, context, source-quality, and corroboration checks.
 <br />
-
-[**Live Demo**](#-demo) · [**Quick Start**](#-quick-start) · [**Architecture**](#-system-architecture) · [**API Docs**](#-api-reference) · [**Agents**](#-ai-agent-system)
-
+Live Demo ·
+API Documentation ·
+Architecture ·
+Testing ·
+Documentation
 <br />
-
 </div>
-
 ---
-
-## 📌 Table of Contents
-
-- [Overview](#-overview)
-- [The Problem](#-the-problem)
-- [The Solution](#-the-solution)
-- [What Bright Data Makes Possible](#-what-bright-data-makes-possible)
-- [Speechmatics Voice Orchestration](#-speechmatics-voice-orchestration)
-- [System Architecture](#-system-architecture)
-- [AI Agent System](#-ai-agent-system)
-- [Tech Stack](#-tech-stack)
-- [Quick Start](#-quick-start)
-- [Environment Configuration](#-environment-configuration)
-- [API Reference](#-api-reference)
-- [Risk Scoring Engine](#-risk-scoring-engine)
-- [Demo](#-demo)
-- [Project Structure](#-project-structure)
-- [Deployment](#-deployment)
-- [Hackathon Alignment](#-hackathon-alignment)
-- [Contributing](#-contributing)
-- [License](#-license)
-
+Table of Contents
+Overview
+Problem and Design Response
+Verified Capabilities
+End-to-End Investigation Flow
+System Architecture
+Identity-First Investigation Gate
+Evidence Validation and Risk Outcomes
+AI Agent System
+Bright Data Integration
+Speechmatics Voice Input
+Tech Stack
+Quick Start
+Environment Configuration
+API Reference
+Testing and Validation
+Demo
+Project Structure
+Deployment
+Technical Documentation
+Known Limitations and Responsible Use
+Hackathon Context
+Contributing
+License
 ---
-
-## 🎯 Overview
-
-**Sentinel Web-Risk** is an autonomous, AI-powered enterprise intelligence platform that detects early warning signs of vendor instability, financial collapse, compliance violations, and operational disruption — **before** they cause damage.
-
-Unlike traditional third-party risk management systems that rely on outdated compliance audits, self-reported vendor documentation, and static databases, Sentinel continuously investigates the **live open web** using six specialized AI agents, Speechmatics voice command pipelines, and Bright Data's global web infrastructure.
-
-The result: **predictive vendor risk intelligence** that enterprises can act on — not just historical data they can only react to.
-
-### ✨ Key Capabilities at a Glance
-
-| Capability | Description |
-|---|---|
-| 🔍 **Autonomous Investigation** | 6 AI agents independently investigate any vendor without human input |
-| 🎙️ **Speechmatics Voice Command** | Real-time speech-to-text pipeline for hands-free query stream routing |
-| 🌐 **Live Web Intelligence** | Real-time SERP, protected portals, geo-restricted sources |
-| 🧠 **Predictive Risk Scoring** | Dynamic 0–100 score across 5 risk dimensions |
-| 🔓 **Zero-Trust Architecture** | Never relies on vendor-submitted data — independently verifies everything |
-| ⚡ **Real-Time Telemetry Feed** | WebSocket-powered live progress with absolute layout transparency |
-
+🎯 Overview
+Sentinel Web-Risk Intelligence is a full-stack responsible-AI and backend-engineering project for point-in-time third-party risk investigation.
+The platform combines:
+pre-investigation company identity resolution;
+a short-lived, single-use authorization boundary;
+live public-web collection through Bright Data providers;
+sentence-level evidence attribution and false-positive controls;
+deterministic risk scoring and language calibration;
+six sequential CrewAI agents for evidence-grounded synthesis;
+secure Speechmatics real-time voice transcription;
+WebSocket progress updates and report persistence.
+Sentinel is designed to make uncertainty visible. When the evidence is too sparse or unreliable, the backend returns `INSUFFICIENT_EVIDENCE` instead of silently treating missing information as low risk.
+Intended Users
+The current prototype is designed for technical evaluation and research by:
+procurement and third-party risk teams;
+compliance and business-continuity analysts;
+responsible-AI and agentic-system researchers;
+software engineering, AI, and data-science reviewers.
+It is not a replacement for legal advice, regulated due diligence, audited financial analysis, or human decision-making.
 ---
-
-## 🚨 The Problem
-
-Modern enterprises depend on thousands of global third-party vendors. When a critical supplier collapses, the damage is immense:
-
-- **$847M** — average cost of a major supply chain disruption *(Interos, 2023)*
-- **73 days** — average time to detect a vendor failure in progress
-- **68%** of enterprises discovered vendor issues only after operational impact had already occurred
-
-**Why existing tools fail:** Existing tools are reactive and blind to the web signals that appear weeks before a vendor collapses. They rely on static databases and vendor-submitted compliance documents.
-
+🚨 Problem and Design Response
+Third-party risk analysis is difficult because company names may be ambiguous, live-web results may refer to unrelated entities, and risk terminology often appears in prevention, guidance, speculation, or historical context rather than as a confirmed incident.
+Sentinel addresses these failure modes through explicit engineering controls:
+Failure Mode	Sentinel Control
+Ambiguous company name	Identity resolution requests website, country, city, or industry context
+Wrong company selected	Canonical identity and evidence URLs are confirmed before investigation
+Replayed or mismatched request	Short-lived, single-use investigation authorization
+Keyword appears in unrelated context	Sentence-level entity attribution and direct-claim checks
+Preventive or hypothetical language	Negation, hypothetical, and protective-context rejection rules
+Weak source creates a severe claim	Source-quality and corroboration thresholds
+Missing public evidence appears “safe”	`INSUFFICIENT_EVIDENCE` no-score outcome
+LLM wording contradicts the score	Deterministic report calibration and final contract validation
+Provider output is unavailable	Optional-provider fallbacks and explicit telemetry
+Long-lived speech key reaches browser	Server-only key exchange for a 60-second temporary token
 ---
+✨ Verified Capabilities
+Capability	Current Behaviour
+Identity-first workflow	`/api/vendors/resolve` runs before `/api/investigate`
+Three identity outcomes	`CONFIRMED`, `SELECTION_REQUIRED`, `MORE_INFORMATION_REQUIRED`
+Confirmed-investigation gate	A confidence threshold and authenticated identity source are required
+Single-use authorization	Opaque authorization expires and cannot be replayed
+Live provider orchestration	SERP is the core provider; Remote MCP, Web Unlocker, Data Center proxy, and ISP proxy are controlled supplementary paths
+Evidence-bound scoring	Only verified, source-linked evidence influences the score
+False-attribution protection	Negated, hypothetical, protective, social-only, or weakly attributed claims can be rejected
+Two valid report outcomes	`COMPLETED` with a score, or `INSUFFICIENT_EVIDENCE` without a defensible score
+Conditional CrewAI execution	Six agents run only when the verified evidence supports scoring
+Deterministic calibration	Score, level, trajectory, language, and citations must pass the final report contract
+Evidence provenance	Provider, retrieval status, timestamp, character count, and SHA-256 digest can be recorded without storing raw scraped content in provenance
+Secure voice input	Speechmatics temporary token, PCM audio worklet, partial/final transcripts, and manual review before investigation
+Real-time progress	REST job creation plus WebSocket progress/completion events
+Testing and CI	Unit/integration suite, Ruff critical checks, Bandit scan, coverage threshold, provider smoke tests, and controlled live validation
+---
+🔄 End-to-End Investigation Flow
+```mermaid
+flowchart TD
+    A[User enters or speaks a company name] --> B[Speech transcript or typed input]
+    B --> C[POST /api/vendors/resolve]
+    C --> D{Identity result}
 
-## 💡 The Solution
+    D -->|More information required| E[Collect website, country, city, or industry]
+    E --> C
 
-Sentinel introduces a **Zero-Trust Autonomous Vendor Intelligence Architecture**.
+    D -->|Selection required| F[User selects the correct candidate]
+    F --> C
 
-Instead of relying on manual inputs, analysts launch voice commands directly into the terminal UI. The platform deploys six autonomous AI agents to cross-examine live data streams via Bright Data infrastructure, synthesizing multi-dimensional threat cards instantly.
+    D -->|Confirmed| G[Issue short-lived single-use authorization]
+    G --> H[POST /api/investigate]
+    H --> I[Consume authorization and create job]
 
+    I --> J[Bright Data SERP collection]
+    J --> K[Optional Remote MCP search]
+    K --> L[Optional Web Unlocker / MCP scrape / proxy fallback]
+    L --> M[Sentence-level evidence extraction]
+    M --> N[Entity, context, source-quality, and corroboration validation]
+    N --> O{Enough verified evidence?}
+
+    O -->|No| P[INSUFFICIENT_EVIDENCE]
+    P --> Q[Skip CrewAI synthesis]
+    Q --> R[Return no-score report with rejected-evidence audit]
+
+    O -->|Yes| S[Deterministic verified-evidence score]
+    S --> T[Six sequential CrewAI tasks]
+    T --> U[Deterministic language calibration]
+    U --> V[Final report contract validation]
+    V --> W[Persist report and stream completion]
 ```
-User triggers Speechmatics input
-↓
-Audio streams parsed and cleansed into clean domains
-↓
-6 AI Agents autonomously investigate
-↓
-Bright Data fetches live, protected, geo-restricted intelligence
-↓
-Risk signals identified, verified, and scored
-↓
-Executive risk report delivered in minutes
-```
-
 ---
-
-## 🌐 What Bright Data Makes Possible
-
-Traditional risk intelligence systems fail because critical web data is locked behind barriers that conventional tools cannot breach. Sentinel uses Bright Data to break through all of them.
-
-| Barrier | Bright Data Solution | Intelligence Unlocked |
-|---|---|---|
-| CAPTCHA-protected legal portals | **Scraping Browser** | SEC filings, court records, regulatory notices |
-| Geo-blocked regional news | **Proxy Network** | Local news from China, EU, Southeast Asia |
-| JavaScript-heavy hiring platforms | **Web Unlocker** | LinkedIn layoff patterns, Glassdoor sentiment |
-| Real-time search intelligence | **SERP API** | Live news, press releases, financial signals |
-| AI-to-web live connectivity | **MCP Server** | Agent-native web access without manual tooling |
-
----
-
-## 🎙️ Speechmatics Voice Orchestration
-
-To streamline high-stress security monitoring, Sentinel integrates a real-time, zero-latency **Speechmatics** input pipeline built directly into the interface.
-
-* **Hardware Core Ingestion:** Taps directly into browser recording layers to translate speech waveforms into data text locally.
-* **Command Cleaning Architecture:** Automatically strips pipeline conversational modifiers (e.g., *"Scan"*, *"Investigate"*, or *"Check"*) to map raw targets instantly.
-* **Visual Telemetry Feedback:** Features an integrated status subsystem tracking `SPEECHMATICS ACTIVE` and `SPEECHMATICS LISTENING` states securely.
-
----
-
-## 🏗️ System Architecture
-
-### High-Level Architecture
-
+🏗️ System Architecture
 ```mermaid
 graph TB
-    subgraph CLIENT["🖥️  CLIENT LAYER"]
-        UI["Next.js Dashboard<br/>React · TypeScript · Tailwind"]
-        WS["WebSocket Client<br/>Real-time Progress Feed"]
-        SM["🎙️ Speechmatics API<br/>Browser Voice Ingestion Engine"]
+    subgraph CLIENT["Client Layer"]
+        UI["Next.js 14 Dashboard"]
+        VOICE["Speechmatics Realtime Client"]
+        IDP["Vendor Identity Panel"]
+        WS["WebSocket Progress Client"]
     end
 
-    subgraph GATEWAY["⚡  API GATEWAY"]
-        API["FastAPI Backend<br/>REST + WebSocket"]
-        BG["Background Task Queue<br/>Async Job Manager"]
+    subgraph FRONTEND_SERVER["Next.js Server Boundary"]
+        TOKEN["Same-Origin Speechmatics Token Route<br/>60-second temporary key"]
     end
 
-    subgraph AGENTS["🤖  MULTI-AGENT ORCHESTRATION  —  CrewAI"]
-        direction LR
-        A1["🔍 Recon Agent<br/>Live web search"]
-        A2["🕸️ Scraping Agent<br/>Protected extraction"]
-        A3["✅ Verification Agent<br/>Credibility scoring"]
-        A4["🧠 Intelligence Agent<br/>Signal synthesis"]
-        A5["📈 Prediction Agent<br/>Disruption modeling"]
-        A6["📋 Reporting Agent<br/>Executive summary"]
+    subgraph API["FastAPI Application"]
+        RESOLVE["POST /api/vendors/resolve"]
+        INVESTIGATE["POST /api/investigate"]
+        JOBS["Jobs / Reports / Dashboard APIs"]
+        SOCKET["/ws/jobs/{job_id}"]
+    end
+
+    subgraph TRUST["Identity and Authorization Boundary"]
+        IDENTITY["Live Identity Evidence + Candidate Resolution"]
+        AUTH["Single-Use Investigation Authorization"]
+    end
+
+    subgraph COLLECTION["Live Web Collection"]
+        SERP["Bright Data SERP API"]
+        MCP_SEARCH["Remote MCP search_engine"]
+        UNLOCKER["Web Unlocker"]
+        MCP_SCRAPE["Remote MCP scrape_as_markdown"]
+        DC["Data Center Proxy"]
+        ISP["ISP Proxy Fallback"]
+    end
+
+    subgraph EVIDENCE["Truth and Evidence Layer"]
+        EXTRACT["Sentence-Level Candidate Extraction"]
+        VERIFY["Attribution and Context Validation"]
+        SCORE["Verified-Evidence Scoring"]
+        CALIBRATE["Deterministic Report Calibration"]
+        CONTRACT["Final Report Contract"]
+    end
+
+    subgraph AGENTS["CrewAI Sequential Pipeline"]
+        A1["Recon"]
+        A2["Scraping"]
+        A3["Verification"]
+        A4["Intelligence"]
+        A5["Prediction"]
+        A6["Reporting"]
         A1 --> A2 --> A3 --> A4 --> A5 --> A6
     end
 
-    subgraph BRIGHTDATA["🌐  BRIGHT DATA INFRASTRUCTURE"]
-        BD1["SERP API<br/>Real-time search"]
-        BD2["Web Unlocker<br/>JS-heavy portals"]
-        BD3["Scraping Browser<br/>CAPTCHA bypass"]
-        BD4["Proxy Network<br/>Geo-restricted sources"]
-        BD5["MCP Server<br/>Agent-native web access"]
+    subgraph STORAGE["Application State"]
+        MEMORY["In-Memory Job and Authorization State"]
+        SQLITE["SQLite Report Persistence"]
     end
 
-    subgraph INTELLIGENCE["⚙️  INTELLIGENCE PROCESSING"]
-        RE["Risk Scoring Engine<br/>5-dimension signal analysis"]
-        LLM["LLM Reasoning<br/>GPT-4o / Claude"]
-    end
-
-    subgraph STORAGE["🗄️  DATA LAYER"]
-        DB["SQLite<br/>Reports & History"]
-        VDB["ChromaDB<br/>Vector Intelligence Store"]
-    end
-
-    subgraph WEB["🌍  LIVE WEB SOURCES"]
-        W_SRCS["Global Web Sources<br/>News · Portals · Filings"]
-    end
-
-    UI <-->|"REST API"| API
-    SM -->|"Dynamic Text Injection"| UI
-    WS <-->|"ws://jobs/{id}"| API
-    API --> BG
-    BG --> A1
-    A1 -->|"search queries"| BD1
-    A2 -->|"protected URLs"| BD2
-    A2 -->|"CAPTCHA portals"| BD3
-    A2 -->|"geo-blocked sources"| BD4
-    A1 -->|"agent-native calls"| BD5
-    BD1 & BD2 & BD3 & BD4 & BD5 --> W_SRCS
-    A6 --> RE
-    A6 --> LLM
-    RE & LLM --> DB
-    LLM --> VDB
-    DB --> API
-
-    style CLIENT fill:#0D1525,stroke:#1A2540,color:#E8EDF8
-    style GATEWAY fill:#0D1525,stroke:#0066FF,color:#E8EDF8
-    style AGENTS fill:#0D1525,stroke:#7B61FF,color:#E8EDF8
-    style BRIGHTDATA fill:#0D1525,stroke:#00D4FF,color:#E8EDF8
-    style INTELLIGENCE fill:#0D1525,stroke:#F5A623,color:#E8EDF8
-    style STORAGE fill:#0D1525,stroke:#1A2540,color:#E8EDF8
-    style WEB fill:#050810,stroke:#1A2540,color:#5C6A88
+    UI --> RESOLVE
+    IDP --> RESOLVE
+    VOICE --> TOKEN
+    TOKEN --> VOICE
+    RESOLVE --> IDENTITY
+    IDENTITY --> AUTH
+    AUTH --> INVESTIGATE
+    INVESTIGATE --> SERP
+    SERP --> MCP_SEARCH
+    MCP_SEARCH --> UNLOCKER
+    UNLOCKER --> MCP_SCRAPE
+    MCP_SCRAPE --> DC
+    DC --> ISP
+    SERP & MCP_SEARCH & UNLOCKER & MCP_SCRAPE & DC & ISP --> EXTRACT
+    EXTRACT --> VERIFY
+    VERIFY --> SCORE
+    SCORE -->|Verified evidence sufficient| A1
+    SCORE -->|Insufficient evidence| CALIBRATE
+    A6 --> CALIBRATE
+    CALIBRATE --> CONTRACT
+    CONTRACT --> SQLITE
+    INVESTIGATE --> MEMORY
+    JOBS --> SQLITE
+    SOCKET --> WS
 ```
-
+Architectural Principles
+Identity before risk: risk scoring cannot begin until a company is strongly confirmed.
+Evidence before synthesis: LLM tasks receive accepted evidence rather than a flattened raw text pool.
+No-score is a valid outcome: insufficient evidence is not converted into a low-risk conclusion.
+Deterministic authority: the LLM supports explanation; deterministic code owns score, level, trajectory, citation, and report-contract authority.
+Auditable provider boundaries: used providers, accepted/rejected evidence, and provenance are recorded separately.
+Point-in-time assessment: the current implementation does not claim continuous surveillance.
+A deeper component-level description is available in `docs/ARCHITECTURE.md`.
 ---
-
-### Investigation Workflow
-
+🪪 Identity-First Investigation Gate
+The investigation is a two-step API flow.
+Step 1 — Resolve the Vendor
+```http
+POST /api/vendors/resolve
+Content-Type: application/json
+```
+```json
+{
+  "vendor_name": "Microsoft",
+  "website": "https://www.microsoft.com",
+  "country": "United States",
+  "industry": "Technology",
+  "language": "EN"
+}
+```
+Possible responses:
+Status	Meaning
+`CONFIRMED`	One company identity passed the confidence and source-quality controls
+`SELECTION_REQUIRED`	Multiple plausible companies were found
+`MORE_INFORMATION_REQUIRED`	The name is too generic or evidence is too weak
+A confirmed result returns an opaque authorization object:
+```json
+{
+  "authorization_id": "short-lived-opaque-value",
+  "expires_at": "ISO-8601 timestamp",
+  "single_use": true,
+  "required_for": "/api/investigate"
+}
+```
+Step 2 — Start the Authorized Investigation
+```http
+POST /api/investigate
+Content-Type: application/json
+```
+```json
+{
+  "vendor_name": "Microsoft",
+  "identity_authorization_id": "short-lived-opaque-value",
+  "language": "EN"
+}
+```
+The authorization is consumed before a job is created. Invalid, expired, replayed, unconfirmed, or vendor-mismatched authorizations are rejected.
+---
+🧾 Evidence Validation and Risk Outcomes
+Sentence-Level Validation
+Each candidate record retains:
+company identity;
+category and severity;
+exact evidence excerpt;
+source URL, title, provider, and quality;
+publication date when available;
+entity-match result;
+direct-claim result;
+negation, hypothetical, and protective-context flags;
+corroboration count and independent domains;
+verification decision and rejection reason.
+Source-Quality Classes
+The current rules distinguish:
+`AUTHORITATIVE`
+`COMPANY_OWNED`
+`REPUTABLE_NEWS`
+`SPECIALIST`
+`GENERAL_WEB`
+`SOCIAL`
+`UNKNOWN`
+Report Outcomes
+`COMPLETED`
+Returned when verified evidence is sufficient for a defensible score.
+`risk_score_available: true`
+score and level are validated together;
+at least one verified citation is mandatory;
+CrewAI may run over the accepted evidence;
+final language and citations must pass the report contract.
+`INSUFFICIENT_EVIDENCE`
+Returned when live retrieval completes but the verified evidence does not support a defensible score.
+`risk_score_available: false`
+missing evidence is not interpreted as low risk;
+rejected sources are not promoted into the final citation set;
+CrewAI synthesis is skipped;
+the report explains the evidence gap and recommended next steps.
+Compatibility fields may contain neutral placeholders for existing clients. Any consumer must check `risk_score_available` and `evidence_assessment_status` before interpreting `risk_score`, `risk_level`, or `disruption_probability`.
+See `docs/EVIDENCE_GOVERNANCE.md` for the complete decision model.
+---
+🤖 AI Agent System
+When verified evidence is sufficient, Sentinel runs six sequential CrewAI roles:
+Agent	Responsibility
+Recon Agent	Reviews accepted live-search evidence and preserves source links
+Scraping Agent	Reviews accepted supplementary evidence from permitted public sources
+Verification Agent	Assesses credibility, recency, relevance, entity match, and contradictions
+Intelligence Agent	Synthesizes the verified cross-category risk profile
+Prediction Agent	Produces a calibrated disruption estimate and time horizon
+Reporting Agent	Returns a structured executive JSON draft
+The agents do not own the final score. Deterministic code controls the risk score, level, disruption calculation, calibrated wording, citations, and final report contract.
+If verified evidence is insufficient, the agent pipeline is skipped to reduce hallucination risk and unnecessary LLM cost.
+---
+🌐 Bright Data Integration
+Sentinel treats direct SERP retrieval as the core live provider and uses other Bright Data services as controlled supplementary paths.
+Provider	Role	Behaviour
+SERP API	Targeted live-web search	Core provider for a controlled live investigation
+Remote MCP `search_engine`	Supplementary agent-native search	Unique results are merged and normalized
+Web Unlocker	Access to complex permitted public pages	Optional; unusable or error bodies are rejected
+Remote MCP `scrape_as_markdown`	Supplementary page extraction	Used as a fallback when appropriate
+Data Center Proxy	Optional direct public-page request	Failure is isolated and recorded
+ISP Proxy	Optional fallback after Data Center failure	Runs only when configured and required
+Provider availability depends on account configuration, target-page policy, network conditions, robots restrictions, and regional access. A provider may be configured but return no usable evidence in a particular run.
+---
+🎙️ Speechmatics Voice Input
+The frontend uses the official `@speechmatics/real-time-client` package and does not expose the long-lived Speechmatics credential to the browser.
 ```mermaid
 sequenceDiagram
-    autonumber
     actor User
-    participant UI as Next.js Dashboard
-    participant API as FastAPI Gateway
-    participant Orch as CrewAI Orchestrator
-    participant BD as Bright Data
-    participant LLM as GPT-4o / Claude
-    participant DB as SQLite
+    participant Browser
+    participant Next as Next.js Token Route
+    participant SM as Speechmatics Realtime API
+    participant UI as Sentinel Input
 
-    User->>UI: Enter vendor name
-    UI->>API: POST /api/investigate
-    API-->>UI: { job_id }
-    UI->>API: WebSocket /ws/jobs/{id}
-
-    API->>Orch: Start investigation (async)
-
-    Note over Orch,BD: STAGE 1 — Recon Agent
-    Orch->>BD: SERP API — 5 targeted queries
-    BD-->>Orch: Live search results (50+ sources)
-    API-->>UI: progress: 25%
-
-    Note over Orch,BD: STAGE 2 — Scraping Agent
-    Orch->>BD: Web Unlocker — protected portals
-    Orch->>BD: Scraping Browser — CAPTCHA bypass
-    Orch->>BD: Proxy Network — geo-restricted news
-    BD-->>Orch: Raw intelligence content
-    API-->>UI: progress: 40%
-
-    Note over Orch,LLM: STAGE 3 — Verification Agent
-    Orch->>LLM: Assess source credibility
-    LLM-->>Orch: Confidence-scored signals
-    API-->>UI: progress: 55%
-
-    Note over Orch,LLM: STAGE 4 — Intelligence Agent
-    Orch->>LLM: Synthesize risk profile
-    LLM-->>Orch: Cross-category risk signals
-    API-->>UI: progress: 68%
-
-    Note over Orch,LLM: STAGE 5 — Prediction Agent
-    Orch->>LLM: Model disruption probability
-    LLM-->>Orch: Time-horizon risk forecast
-    API-->>UI: progress: 82%
-
-    Note over Orch,LLM: STAGE 6 — Reporting Agent
-    Orch->>LLM: Generate executive summary JSON
-    LLM-->>Orch: Structured risk report
-    API-->>UI: progress: 95%
-
-    Orch->>DB: Persist report
-    API-->>UI: completed + full report
-    UI-->>User: Risk score, signals, executive summary
+    User->>Browser: Click microphone
+    Browser->>Next: POST /api/speechmatics-token
+    Next->>SM: Exchange server-only API key
+    SM-->>Next: 60-second temporary key
+    Next-->>Browser: Temporary key, no-store
+    Browser->>SM: Open secure realtime connection
+    Browser->>SM: PCM 16 kHz audio
+    SM-->>Browser: Partial transcripts
+    SM-->>Browser: Final transcript
+    Browser->>UI: Clean command and populate company field
+    UI-->>User: Review company name
+    User->>UI: Manually start identity resolution
 ```
-
+Security and usability controls:
+same-origin token requests;
+server-only `SPEECHMATICS_API_KEY`;
+60-second temporary authorization;
+no browser-exposed `NEXT_PUBLIC_SPEECHMATICS_API_KEY`;
+PCM audio worklet and microphone cleanup;
+partial and final transcript handling;
+automatic removal of command prefixes such as “scan” or “investigate”;
+no automatic risk investigation after transcription;
+supported UI language mapping for English, Mandarin Chinese, Arabic, Bangla, German, and Japanese.
 ---
-
-### Risk Scoring Pipeline
-
-```mermaid
-flowchart LR
-    subgraph INPUT["Raw Intelligence"]
-        I1["SERP Results"]
-        I2["Scraped Content"]
-        I3["LLM Analysis"]
-    end
-
-    subgraph SIGNALS["Signal Extraction"]
-        S1["Financial Signals<br/>bankruptcy · debt · losses"]
-        S2["Operational Signals<br/>layoffs · closures · delays"]
-        S3["Legal Signals<br/>lawsuits · SEC · fines"]
-        S4["Reputational Signals<br/>sentiment · backlash"]
-        S5["Cyber Signals<br/>breach · ransomware"]
-    end
-
-    subgraph SCORING["Risk Calculation"]
-        W["Weighted Score<br/>CRITICAL=35 HIGH=20<br/>MEDIUM=10 LOW=3"]
-        C["Confidence Score<br/>source diversity × volume"]
-        P["Disruption Probability<br/>base × category multipliers"]
-    end
-
-    subgraph OUTPUT["Risk Level"]
-        R1["🟢 LOW<br/>0–24"]
-        R2["🟡 MEDIUM<br/>25–49"]
-        R3["🟠 HIGH<br/>50–69"]
-        R4["🔴 CRITICAL<br/>70–100"]
-    end
-
-    INPUT --> SIGNALS
-    SIGNALS --> W
-    W --> C --> P
-    P --> OUTPUT
-
-    style INPUT fill:#0D1525,stroke:#1A2540,color:#E8EDF8
-    style SIGNALS fill:#0D1525,stroke:#7B61FF,color:#E8EDF8
-    style SCORING fill:#0D1525,stroke:#F5A623,color:#E8EDF8
-    style OUTPUT fill:#0D1525,stroke:#00E87A,color:#E8EDF8
-```
-
+🛠️ Tech Stack
+Backend
+Technology	Current Repository Configuration	Purpose
+Python	3.11+	Backend and test runtime
+FastAPI	0.115.0	REST API and WebSocket gateway
+Uvicorn	0.31.1	ASGI runtime
+CrewAI	`>=0.80.0`	Sequential multi-agent orchestration
+OpenAI SDK	1.51.0	OpenAI-compatible LLM transport
+LangChain	`>=0.2.16,<0.3.0`	LLM integration utilities
+HTTPX	0.27.2	Async provider calls
+Pydantic	`>=2.7,<3`	Request and configuration validation
+Beautiful Soup / lxml	4.12.3 / 5.3.0	Response parsing
+SQLite	Built in	Report persistence
+Pytest / Ruff / Bandit	Development dependencies	Tests, critical lint checks, and security scanning
+Frontend
+Technology	Current Repository Configuration	Purpose
+Next.js	`^14.2.0`	App Router frontend and token endpoint
+React	`^18.3.0`	User interface
+TypeScript	`^5.4.0`	Typed frontend logic
+Tailwind CSS	`^3.4.19`	Styling
+Recharts	`^2.12.0`	Visualisation
+Framer Motion	`^11.3.0`	Motion and transitions
+Speechmatics Client	`8.5.1`	Secure real-time transcription
 ---
-
-## 🤖 AI Agent System
-
-Sentinel deploys six specialized CrewAI agents in a sequential pipeline. Each agent has a distinct role, skill set, and output contract.
-
-```mermaid
-graph LR
-    subgraph PIPELINE["Sequential Agent Pipeline"]
-        A1["🔍 RECON AGENT<br/>─────────────<br/>Role: Intelligence Recon Specialist<br/>Tool: Bright Data SERP API<br/>Output: 50+ raw search results<br/>across 5 targeted query types"]
-
-        A2["🕸️ SCRAPING AGENT<br/>─────────────<br/>Role: Deep Web Extraction Specialist<br/>Tool: Web Unlocker · Scraping Browser<br/>Output: Content from protected,<br/>JS-heavy, geo-restricted sources"]
-
-        A3["✅ VERIFICATION AGENT<br/>─────────────<br/>Role: Source Credibility Analyst<br/>Tool: LLM reasoning<br/>Output: Confidence-scored signals<br/>Official=0.95 · News=0.82 · Forum=0.41"]
-
-        A4["🧠 INTELLIGENCE AGENT<br/>─────────────<br/>Role: Risk Intelligence Synthesizer<br/>Tool: LLM + Risk Engine<br/>Output: Cross-category risk profile<br/>with trajectory assessment"]
-
-        A5["📈 PREDICTION AGENT<br/>─────────────<br/>Role: Predictive Risk Modeler<br/>Tool: LLM + historical patterns<br/>Output: Disruption probability<br/>and 90-day time horizon"]
-
-        A6["📋 REPORTING AGENT<br/>─────────────<br/>Role: Executive Intelligence Reporter<br/>Tool: LLM structured output<br/>Output: JSON executive report<br/>ready for C-suite consumption"]
-
-        A1 -->|"raw intel"| A2
-        A2 -->|"full corpus"| A3
-        A3 -->|"verified signals"| A4
-        A4 -->|"risk profile"| A5
-        A5 -->|"predictions"| A6
-    end
-
-    style PIPELINE fill:#050810,stroke:#0066FF,color:#E8EDF8
-```
-
----
-
-## 🛠️ Tech Stack
-
-### Backend
-
-| Technology | Version | Purpose |
-|---|---|---|
-| **Python** | 3.11+ | Core backend language |
-| **FastAPI** | 0.115 | High-performance async API + WebSocket |
-| **CrewAI** | 0.70 | Multi-agent orchestration framework |
-| **LangChain** | 0.3 | LLM abstraction and tooling |
-| **AI/ML API Router**| Core Tunnel | High-concurrency OpenAI-compatible layer ensuring stable multi-agent throughput |
-| **Llama-3.3-70B**  | Turbo | Primary logic processing, signal mapping, and report synthesis |
-| **SQLite** | Built-in | Lightweight MVP database |
-| **ChromaDB** | 0.5 | Vector storage for intelligence retrieval |
-| **Uvicorn** | 0.30 | ASGI server |
-| **Docker** | Latest | Containerisation |
-
-### Frontend
-
-| Technology | Version | Purpose |
-|---|---|---|
-| **Next.js** | 14 | Enterprise React framework (App Router) |
-| **React** | 18 | UI component architecture |
-| **TypeScript** | 5.4 | Type-safe development |
-| **Tailwind CSS** | 3.4 | Utility-first styling |
-| **Recharts** | 2.12 | Data visualisation |
-| **Lucide React** | 0.400 | Icon system |
-| **Speechmatics Stream** | Native SDK | Client-side hardware audio ingestion matrix |
-
-### Bright Data Infrastructure
-
-| Product | API / Protocol | Usage in Sentinel |
-|---|---|---|
-| **MCP Server** | WebSocket SSE | Agent-native live web access |
-| **SERP API** | REST | Real-time search intelligence (5 query types per vendor) |
-| **Scraping Browser** | WebSocket CDP | CAPTCHA bypass, JS rendering |
-| **Web Unlocker** | REST | Protected portal access, SEC EDGAR |
-| **Proxy Network** | HTTP/HTTPS proxy | Geo-restricted regional intelligence |
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-Ensure the following are installed before proceeding:
-
+🚀 Quick Start
+Prerequisites
 ```bash
 python --version    # 3.11+
-node --version      # 20 LTS
+node --version      # 20+
 npm --version       # 10+
-docker --version    # Any recent version
+docker --version    # Optional
 ```
-
-### 1. Clone the Repository
-
+1. Clone the Repository
 ```bash
 git clone https://github.com/Jxxy123/sentinel-web-risk-intelligence.git
 cd sentinel-web-risk-intelligence
 ```
-
-### 2. Backend Setup
-
+2. Start the Backend
 ```bash
 cd backend
 
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate          # Mac/Linux
-# venv\Scripts\activate           # Windows
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure environment
-cp .env.example .env
-# → Edit .env with your API keys (see Environment Configuration below)
-
-# Start backend
-python main.py
-# → API running at http://localhost:8000
-# → Swagger docs at http://localhost:8000/docs
+python -m venv .venv
 ```
+Activate the environment:
+```bash
+# macOS / Linux
+source .venv/bin/activate
 
-### 3. Frontend Setup
-
-Open a new terminal:
-
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+```
+Install dependencies and create the environment file:
+```bash
+pip install -r requirements.txt
+cp .env.example .env
+```
+Set the required credentials in `backend/.env`, then start FastAPI:
+```bash
+python main.py
+```
+Local endpoints:
+API: `http://localhost:8000`
+Swagger UI: `http://localhost:8000/docs`
+Health: `http://localhost:8000/health`
+3. Start the Frontend
+Open a second terminal:
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Create frontend environment file
-# Create frontend environment file
-echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
-echo "NEXT_PUBLIC_WS_URL=ws://localhost:8000"   >> .env.local
-echo "NEXT_PUBLIC_SPEECHMATICS_API_KEY=your_speechmatics_key_here" >> .env.local
-
-# Start frontend
-npm run dev
-# → Dashboard running at http://localhost:3000
+cp .env.example .env.local
 ```
-
-### 4. Run Your First Investigation
-
-1. Open **http://localhost:3000**
-2. Click **"Evergrande"** in the demo vendors row
-3. Watch 6 AI agents investigate in real time via the agent terminal
-4. Receive a full predictive risk report with score, signals, and executive summary
-
----
-
-## ⚙️ Environment Configuration
-
-Create `backend/.env` from the provided template. All required variables:
-
+Configure:
 ```env
-# ── AI Models ──────────────────────────────────────────────────────
-# 🔑 Core Third-Party API Authentication Credentials
-OPENAI_API_KEY="your_aiml_api_key_here"
-BRIGHT_DATA_API_KEY="your_bright_data_api_key_here"
-
-# 🌐 Hackathon Routing Tunnels (Redirects CrewAI to AI/ML API Global Gateway)
-OPENAI_BASE_URL="https://api.aimlapi.com/v1"
-FREE_TIER_MODEL="meta-llama/Llama-3.3-70B-Instruct-Turbo"
-
-# ── Bright Data Infrastructure Authentication ───────────────────
-BRIGHT_DATA_API_KEY="your_bright_data_api_key_here"
-BRIGHT_DATA_PROXY_HOST="brd.superproxy.io"
-BRIGHT_DATA_PROXY_PORT=33335
-DATA_CENTER_PROXY="http://brd-customer-XXXX-zone-data_center:PASS@brd.superproxy.io:33335"
-ISP_PROXY="http://brd-customer-XXXX-zone-isp:PASS@brd.superproxy.io:33335"
-
-# ── Application Configuration ──────────────────────────────────────
-APP_ENV="development"
-APP_HOST="127.0.0.1"
-APP_PORT=8000
-CORS_ORIGINS="http://localhost:3000"
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_WS_URL=ws://localhost:8000
+SPEECHMATICS_API_KEY=your_server_only_speechmatics_key
 ```
-
-> **Where to find your Bright Data credentials:**
-> Dashboard → Your Zone → Access Parameters → copy username and password
-
-Create Frontend Configuration (frontend/.env.local)
-
-```
-NEXT_PUBLIC_API_URL="http://localhost:8000"
-NEXT_PUBLIC_WS_URL="ws://localhost:8000"
-NEXT_PUBLIC_SPEECHMATICS_API_KEY="your_speechmatics_secret_token_here"
-```
-
----
-
-## 📡 API Reference
-
-The FastAPI backend exposes the following endpoints. Full interactive documentation available at `/docs` when running locally.
-
-### Core Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/health` | System health check |
-| `POST` | `/api/investigate` | Start an autonomous vendor investigation |
-| `GET` | `/api/jobs/{job_id}` | Poll investigation job status |
-| `GET` | `/api/reports` | List recent risk reports |
-| `GET` | `/api/reports/{id}` | Fetch a specific report by ID |
-| `GET` | `/api/dashboard/stats` | Dashboard statistics and distribution |
-| `WS` | `/ws/jobs/{job_id}` | Real-time investigation progress stream |
-
-### Start Investigation
-
+Then run:
 ```bash
-POST /api/investigate
-Content-Type: application/json
-
-{
-  "vendor_name": "Evergrande"
-}
+npm run dev
 ```
+Open `http://localhost:3000`.
+4. Run an Investigation
+Enter or speak a company name.
+Review the transcript before continuing.
+Resolve the company identity.
+Provide website, country, city, or industry if more context is requested.
+Select the correct candidate when multiple matches are returned.
+Start the authorized investigation.
+Observe live progress through the WebSocket-powered interface.
+Review the score only when `risk_score_available` is true.
+---
+⚙️ Environment Configuration
+Backend: Required for Real Provider Mode
+```env
+APP_ENV=development
+APP_HOST=0.0.0.0
+APP_PORT=8000
+CORS_ORIGINS=http://localhost:3000
+EXECUTION_MODE=real
 
-**Response:**
+OPENAI_API_KEY=
+OPENAI_BASE_URL=https://api.aimlapi.com/v1
+FREE_TIER_MODEL=meta-llama/Llama-3.3-70B-Instruct-Turbo
+
+BRIGHT_DATA_API_KEY=
+BRIGHT_DATA_SERP_ZONE=
+BRIGHT_DATA_SERP_API_URL=https://api.brightdata.com/request
+
+SECRET_KEY=replace-with-a-secure-random-secret
+DATABASE_URL=sqlite:///./sentinel.db
+```
+Backend: Optional Supplementary Providers
+```env
+BRIGHT_DATA_WEB_UNLOCKER_ZONE=
+BRIGHT_DATA_WEB_UNLOCKER_URL=https://api.brightdata.com/request
+
+BRIGHT_DATA_MCP_BASE_URL=https://mcp.brightdata.com/mcp
+BRIGHT_DATA_MCP_TOOLS=search_engine,scrape_as_markdown
+BRIGHT_DATA_MCP_GROUPS=
+BRIGHT_DATA_MCP_UNLOCKER_ZONE=
+BRIGHT_DATA_MCP_PRO=false
+
+BRIGHT_DATA_PROXY_HOST=brd.superproxy.io
+BRIGHT_DATA_PROXY_PORT=33335
+BRIGHT_DATA_PROXY_USER=
+BRIGHT_DATA_PROXY_PASS=
+BRIGHT_DATA_ISP_PROXY_USER=
+BRIGHT_DATA_ISP_PROXY_PASS=
+BRIGHT_DATA_ZONE=data_center
+
+DATA_CENTER_PROXY=
+ISP_PROXY=
+```
+Deterministic Mock Mode
+```env
+EXECUTION_MODE=mock
+```
+Mock mode is intended for deterministic development and automated tests. It avoids external provider calls.
+Frontend
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_WS_URL=ws://localhost:8000
+
+# Server-only. Never prefix this with NEXT_PUBLIC_.
+SPEECHMATICS_API_KEY=
+```
+Never commit `.env`, `.env.local`, provider passwords, temporary tokens, or generated authenticated MCP URLs.
+A complete environment and deployment guide is available in `docs/DEPLOYMENT_AND_OPERATIONS.md`.
+---
+📡 API Reference
+Interactive OpenAPI documentation is available at `/docs`.
+Core Endpoints
+Method	Endpoint	Description
+`GET`	`/health`	Service status and version
+`POST`	`/api/vendors/resolve`	Resolve and confirm vendor identity
+`POST`	`/api/investigate`	Consume a confirmed identity authorization and create a job
+`GET`	`/api/jobs/{job_id}`	Return the current job state
+`GET`	`/api/reports`	List recent reports
+`GET`	`/api/reports/{report_id}`	Return one report
+`DELETE`	`/api/reports/{report_id}`	Delete one report
+`GET`	`/api/dashboard/stats`	Return dashboard aggregates
+`WS`	`/ws/jobs/{job_id}`	Stream status, progress, completion, or failure
+Job Response
 ```json
 {
-  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "job_id": "generated-uuid",
   "status": "queued",
-  "vendor_name": "Evergrande"
+  "vendor_name": "Microsoft"
 }
 ```
-
-### WebSocket Progress Stream
-
-```javascript
-const ws = new WebSocket(`ws://localhost:8000/ws/jobs/${jobId}`);
-
-ws.onmessage = (event) => {
-  const { type, data } = JSON.parse(event.data);
-  // type: "progress" | "completed" | "failed"
-  // data.progress: 0–100
-  // data.stage: "recon" | "scraping" | "analysis" | "agents" | "scoring" | "reporting" | "complete"
-  // data.report: RiskReport (when type === "completed")
-};
-```
-
-### Risk Report Schema
-
+Report Contract: Key Fields
 ```typescript
+type EvidenceAssessmentStatus =
+  | "COMPLETED"
+  | "INSUFFICIENT_EVIDENCE";
+
 interface RiskReport {
-  vendor_name:             string;
-  risk_score:              number;          // 0–100
-  risk_level:              "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
-  confidence_score:        number;          // 0–1
-  disruption_probability:  number;          // 0–1
-  executive_summary:       string;
-  risk_headline:           string;
-  primary_risk_category:   string;
-  key_findings:            string[];
-  risk_trajectory:         "Improving" | "Stable" | "Deteriorating" | "Critical";
-  recommended_actions:     string[];
-  monitoring_signals:      string[];
-  time_horizon:            "Immediate" | "Near-term" | "Medium-term";
-  signals:                 RiskSignal[];
-  sources:                 { url: string; title: string }[];
-  generated_at:            string;          // ISO 8601
+  vendor_name: string;
+  evidence_assessment_status: EvidenceAssessmentStatus;
+  risk_score_available: boolean;
+
+  // Interpret only when risk_score_available === true.
+  risk_score: number;
+  risk_level: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  disruption_probability: number;
+
+  confidence_score: number;
+  executive_summary: string;
+  risk_headline: string;
+  primary_risk_category: string;
+  key_findings: string[];
+  risk_trajectory: string;
+  recommended_actions: string[];
+  monitoring_signals: string[];
+  time_horizon: string;
+  signals: RiskSignal[];
+  sources: {
+    url: string;
+    title: string;
+    source: string;
+  }[];
+  evidence_provenance: EvidenceProvenanceRecord[];
+  raw_intelligence: Record<string, unknown>;
+  status: "completed";
+  generated_at: string;
 }
 ```
-
 ---
-
-## 📊 Risk Scoring Engine
-
-The scoring engine (`backend/core/risk_engine.py`) analyses raw text for signals across **5 risk dimensions**, each with **4 severity tiers**:
-
-```
-Financial    → bankruptcy · insolvency · debt crisis · cost cutting
-Operational  → shutdown · major layoffs · production delays · restructuring
-Legal        → criminal charges · class action · SEC investigation · fine
-Reputational → scandal · public backlash · viral negative · criticism
-Cybersecurity → data breach · ransomware · hacked · security incident
-```
-
-**Severity weights used in score calculation:**
-
-| Severity | Weight | Example Signal |
-|---|---|---|
-| `CRITICAL` | **35** | "bankruptcy filing", "criminal charges" |
-| `HIGH` | **20** | "mass layoffs", "SEC investigation" |
-| `MEDIUM` | **10** | "hiring freeze", "regulatory warning" |
-| `LOW` | **3** | "restructuring", "strategic review" |
-
-**Final score formula:**
-
-```
-risk_score       = min(100, Σ(signal_weights))
-confidence       = (category_diversity × 0.5) + (signal_volume × 0.5)
-disruption_prob  = min(0.99, (score/100) × severity_modifier)
-```
-
+📊 Risk Scoring Model
+Sentinel scores only records that pass the evidence validator.
+Severity Base Weights
+Severity	Base Weight
+Critical	35
+High	20
+Medium	10
+Low	3
+The final contribution of an accepted indicator is adjusted by:
+source-quality multiplier;
+publication freshness;
+independent corroboration;
+duplicate-indicator suppression.
+Score Bands
+Score	Level
+0–24	LOW
+25–49	MEDIUM
+50–69	HIGH
+70–100	CRITICAL
+A numeric score is produced only when the evidence sufficiency rule is met. The model does not interpret an empty public-web result set as a low-risk finding.
 ---
-
-## 🎥 Demo
-
-### Suggested Demo Vendors
-
-These historical cases surface rich, real intelligence from the live web — ideal for demo purposes:
-
-| Vendor | Why It Works |
-|---|---|
-| **Evergrande** | 2021 Chinese real estate debt crisis — massive signal volume |
-| **FTX** | 2022 crypto exchange collapse — regulatory + reputational signals |
-| **Silicon Valley Bank** | 2023 bank run — financial distress signals from weeks prior |
-| **Lehman Brothers** | Historical financial collapse — archived signals still indexed |
-| **Theranos** | Corporate fraud — legal + reputational signals |
-
-### Demo Video Script
-
-See Sentinel Web-Risk in action! Watch our 2-minute submission walkthrough showing how our autonomous AI agents leverage Bright Data pipelines to detect real-time corporate threat matrices.
-
-👉 **[Watch the Sentinel Web-Risk Hackathon Demo Video]([https://www.youtube.com/watch?v=dQw4w9WgXcQ](https://youtu.be/ttH9wO2Tg5E?si=P_xU1x_i6n5axyG8))**
-
----
-
-## 📁 Project Structure
-
+✅ Testing and Validation
+The hardening branch has completed:
+216 passing backend tests
+0 failing backend tests
+8 non-blocking deprecation warnings
+100% measured coverage for `core/risk_engine.py`
+90% enforced minimum for that measured module
+Ruff critical Python checks
+Bandit medium/high-confidence security scan
+focused identity, authorization, provider, evidence, calibration, report-contract, and orchestration tests
+a successful controlled live Microsoft investigation
+Latest Controlled Live Validation
+Date: 31 July 2026
+Metric	Result
+Workflow	Controlled Full Live Investigation
+Outcome	`COMPLETED`
+Risk result	4/100 (`LOW`)
+Confidence	0.46
+Disruption probability	0.05
+Unique live-search results	29
+Verified final sources	1
+Usable providers	SERP API, Remote MCP `search_engine`, Remote MCP `scrape_as_markdown`
+Optional providers without usable output	Proxy Network, Web Unlocker
+Database writes in smoke test	0
+Workflow result	Passed
+This is a point-in-time engineering validation of the end-to-end pipeline, not a benchmark of universal company coverage or predictive accuracy.
+Run the backend suite locally:
+```bash
+cd backend
+pip install -r requirements-dev.txt
+python -m pytest tests -v \
+  --cov=core.risk_engine \
+  --cov-report=term-missing \
+  --cov-fail-under=90
 ```
-sentinel-web-risk/
+Further details are in `docs/TESTING_AND_VALIDATION.md`.
+---
+🎥 Demo
+Live frontend: sentinel-web-risk-intelligence.vercel.app
+Backend API documentation: Render Swagger UI
+Demo video: Sentinel Web-Risk Hackathon Walkthrough
+Suggested historical demonstration targets:
+Vendor	Typical Public Evidence
+Evergrande	Debt, restructuring, and regulatory reporting
+FTX	Legal, financial, and reputational evidence
+Silicon Valley Bank	Financial and operational disruption evidence
+Lehman Brothers	Archived financial-collapse reporting
+Theranos	Legal and reputational evidence
+Historical targets are useful for UI demonstrations, but results still depend on current retrieval, identity confirmation, and evidence validation.
+---
+📁 Project Structure
+```text
+sentinel-web-risk-intelligence/
+├── .github/
+│   └── workflows/
+│       ├── backend-tests.yml
+│       ├── full-live-investigation.yml
+│       ├── vendor-identity-live-smoke.yml
+│       ├── vendor-identity-runtime-smoke.yml
+│       ├── confirmed-investigation-live-smoke.yml
+│       ├── crewai-live-smoke.yml
+│       └── brightdata-*-smoke.yml
 │
 ├── backend/
-│   ├── main.py                    ← FastAPI app · routes · WebSocket server
+│   ├── main.py
 │   ├── requirements.txt
+│   ├── requirements-dev.txt
 │   ├── Dockerfile
-│   ├── .env.example               ← Environment template
+│   ├── .env.example
+│   │
+│   ├── agents/
+│   │   └── orchestrator.py
 │   │
 │   ├── core/
-│   │   ├── config.py              ← Pydantic settings
-│   │   ├── database.py            ← SQLite models + CRUD
-│   │   ├── brightdata.py          ← SERP · Web Unlocker · Proxy · MCP clients
-│   │   └── risk_engine.py         ← Signal extraction · scoring · probability
+│   │   ├── brightdata.py
+│   │   ├── brightdata_remote_mcp.py
+│   │   ├── company_identity.py
+│   │   ├── config.py
+│   │   ├── database.py
+│   │   ├── evidence_scoring.py
+│   │   ├── evidence_validation.py
+│   │   ├── industry_profiles.py
+│   │   ├── investigation_authorization.py
+│   │   ├── live_vendor_identity.py
+│   │   ├── mock_providers.py
+│   │   ├── orchestrator_truth.py
+│   │   ├── provider_factory.py
+│   │   ├── report_calibration.py
+│   │   ├── report_contract.py
+│   │   ├── risk_engine.py
+│   │   ├── serp_parser.py
+│   │   ├── vendor_resolution.py
+│   │   └── vendor_resolution_api.py
 │   │
-│   └── agents/
-│       └── orchestrator.py        ← CrewAI 6-agent pipeline
+│   ├── tests/
+│   │   ├── test_company_identity.py
+│   │   ├── test_confirmed_investigation_gate.py
+│   │   ├── test_evidence_scoring.py
+│   │   ├── test_evidence_validation.py
+│   │   ├── test_orchestrator_integration.py
+│   │   ├── test_report_calibration.py
+│   │   ├── test_report_contract.py
+│   │   ├── test_report_outcomes.py
+│   │   ├── test_truth_hardening_regression.py
+│   │   └── ...
+│   │
+│   └── tools/
+│       ├── full_live_investigation_smoke_test.py
+│       ├── vendor_identity_live_smoke_test.py
+│       ├── confirmed_investigation_live_smoke_test.py
+│       └── brightdata_*_smoke_test.py
 │
 ├── frontend/
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── layout.tsx         ← Root layout · animated background
-│   │   │   ├── page.tsx           ← Main dashboard · tabs · 3-column results
-│   │   │   └── globals.css        ← Design system · animations · typography
-│   │   │
-│   │   ├── components/
-│   │   │   ├── ui/
-│   │   │   │   └── AnimatedBackground.tsx   ← Canvas particle system
-│   │   │   └── dashboard/
-│   │   │       ├── AgentStatusPanel.tsx     ← Live terminal with per-agent logs
-│   │   │       ├── RiskReportCard.tsx       ← Executive summary · findings · sources
-│   │   │       ├── RiskScoreRing.tsx        ← Animated SVG score ring
-│   │   │       ├── LiveAlertsPanel.tsx      ← Left-column animated signal feed
-│   │   │       ├── GovernancePanel.tsx      ← API usage · cost · compliance
-│   │   │       ├── StatCard.tsx             ← Dashboard metric cards
-│   │   │       └── IntelligenceFeed.tsx     ← Empty state / capabilities showcase
-│   │   │
-│   │   └── lib/
-│   │       └── api.ts             ← API client · types · WebSocket factory
-│   │
-│   ├── tailwind.config.js
-│   ├── next.config.js
-│   ├── tsconfig.json
+│   ├── .env.example
 │   ├── package.json
-│   └── Dockerfile
+│   ├── Dockerfile
+│   ├── public/
+│   │   └── speechmatics-pcm-worklet.js
+│   └── src/
+│       ├── app/
+│       │   ├── api/speechmatics-token/route.ts
+│       │   ├── layout.tsx
+│       │   └── page.tsx
+│       ├── components/dashboard/
+│       │   ├── VendorIdentityPanel.tsx
+│       │   ├── AgentStatusPanel.tsx
+│       │   ├── RiskReportCard.tsx
+│       │   └── ...
+│       └── lib/
+│           ├── api.ts
+│           └── useSpeechmaticsVoice.ts
+│
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── EVIDENCE_GOVERNANCE.md
+│   ├── TESTING_AND_VALIDATION.md
+│   └── DEPLOYMENT_AND_OPERATIONS.md
 │
 ├── docker-compose.yml
-├── LICENSE                        ← MIT (required for hackathon)
-├── SETUP_GUIDE.md
+├── LICENSE
 └── README.md
 ```
-
 ---
-
-## 🚢 Deployment
-
-The absolute easiest way to deploy this full-stack monorepo is using **Render** for the backend and **Vercel** for the frontend. Both platforms connect directly to GitHub for automatic zero-configuration deployments.
-
-### 🐍 Backend Deployment (Render)
-1. Create a free account at [Render.com](https://render.com) and click **New +** > **Web Service**.
-2. Connect your GitHub account and select the `sentinel-web-risk-intelligence` repository.
-3. Configure the settings exactly like this to target the backend subfolder:
-   * **Root Directory:** `backend`
-   * **Runtime:** `Python 3`
-   * **Build Command:** `pip install -r requirements.txt`
-   * **Start Command:** `python main.py`
-4. Click **Advanced**, scroll to **Environment Variables**, and add your secrets (`GROQ_API_KEY`, `BRIGHT_DATA_API_KEY`, etc.).
-5. Click **Deploy Web Service**.
-
-### 📐 Frontend Deployment (Vercel)
-1. Go to [Vercel.com](https://vercel.com), sign in with GitHub, and click **Add New** > **Project**.
-2. Import your `sentinel-web-risk-intelligence` repository.
-3. Under **Root Directory**, click **Edit** and select the `frontend` folder.
-4. Open the **Environment Variables** section and add your live Render URL:
-   * `NEXT_PUBLIC_API_URL` = `https://your-backend-service.onrender.com`
-5. Click **Deploy**.
-
-
+🚢 Deployment
+The current deployment model uses:
+Render for the FastAPI backend;
+Vercel for the Next.js frontend.
+Backend — Render
+Recommended configuration:
+Setting	Value
+Root directory	`backend`
+Runtime	Python 3
+Build command	`pip install -r requirements.txt`
+Start command	`python main.py`
+Set backend credentials and provider variables in Render. Never place provider secrets in Vercel public variables.
+Frontend — Vercel
+Variable	Purpose
+`NEXT_PUBLIC_API_URL`	Public HTTPS Render backend URL
+`NEXT_PUBLIC_WS_URL`	Public WSS backend URL
+`SPEECHMATICS_API_KEY`	Server-only Vercel environment variable
+Set the backend `CORS_ORIGINS` to the exact production and required preview origins, then redeploy the backend before redeploying the frontend.
+The complete order of operations, health checks, secret placement, and troubleshooting guidance is in `docs/DEPLOYMENT_AND_OPERATIONS.md`.
 ---
-
-## 🏆 Hackathon Alignment
-
-This project was built for the **lablab.ai × Bright Data: Web Data UNLOCKED Hackathon (2026)**.
-
-| Official Judging Criterion | How Sentinel Addresses It |
-|---|---|
-| **Bright Data Requirement** | 5 Bright Data products deeply integrated: MCP Server, SERP API, Scraping Browser, Web Unlocker, Proxy Network |
-| **Model Integration** | GPT-4o powers all 6 agents with distinct system prompts, role definitions, and task contracts via CrewAI |
-| **Business Impact** | Targets a $XX billion enterprise risk management market; direct ROI on preventing supply chain failures |
-| **Uniqueness & Creativity** | Zero-Trust autonomous investigation — no comparable product does live web verification at this depth |
-| **Presentation** | Enterprise-grade real-time dashboard with animated terminal, 3-column results layout, and live intelligence feed |
-
-**Submission deliverables checklist:**
-
-- [x] Public GitHub repository
-- [x] MIT License
-- [x] Working online prototype
-- [x] Video presentation
-- [x] Pitch deck
-- [x] Project documentation
-- [x] Bright Data integration demonstrable in live demo
-
+📚 Technical Documentation
+Document	Purpose
+`docs/ARCHITECTURE.md`	Components, trust boundaries, request flow, state, and provider orchestration
+`docs/EVIDENCE_GOVERNANCE.md`	Identity, attribution, evidence sufficiency, scoring authority, provenance, and LLM boundaries
+`docs/TESTING_AND_VALIDATION.md`	Unit, integration, security, provider, and controlled live-validation strategy
+`docs/DEPLOYMENT_AND_OPERATIONS.md`	Local setup, Render/Vercel deployment, secrets, CORS, health checks, and troubleshooting
 ---
-
-## 🤝 Contributing
-
-Contributions are welcome. Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature-name`
-3. Commit your changes: `git commit -m "feat: add your feature"`
-4. Push to the branch: `git push origin feature/your-feature-name`
-5. Open a Pull Request
-
-Please ensure all code follows the existing style conventions and includes appropriate documentation.
-
+⚠️ Known Limitations and Responsible Use
+Sentinel produces a point-in-time public-web assessment, not continuous surveillance.
+Public-web coverage can be incomplete, delayed, duplicated, regionally restricted, or unavailable.
+Provider success varies by page, product access, network conditions, and target policy.
+Source-quality classification is currently rule-based and should be treated as a screening control, not an infallible authority judgement.
+Domain suffix alone does not prove that a page is an authoritative source for the company or event being assessed.
+The current authorization store and active-job state are process-local and should be moved to a durable shared store before horizontal production scaling.
+SQLite is appropriate for the prototype but not a complete enterprise persistence strategy.
+Client applications must check `risk_score_available`; compatibility placeholders must not be shown as an actual low-risk judgement.
+LLM-generated language can still require review even though deterministic calibration and contract checks restrict the accepted final report.
+Risk estimates are not audited financial forecasts and should not be used as the sole basis for procurement, legal, compliance, lending, investment, or safety-critical decisions.
+The successful Microsoft live run validates the engineering pipeline, not universal predictive accuracy.
 ---
-
-## 📄 License
-
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
-
+🏆 Hackathon Context
+Sentinel was originally developed for the lablab.ai × Bright Data Web Data UNLOCKED Hackathon 2026 and has since been extended with identity-first authorization, truth-safe evidence scoring, secure Speechmatics voice input, and a broader automated-validation framework.
+Demonstrated Engineering Areas
+Bright Data SERP, Remote MCP, Web Unlocker, and proxy integrations;
+FastAPI REST and WebSocket services;
+CrewAI orchestration with configurable OpenAI-compatible LLM transport;
+secure client/server Speechmatics design;
+evidence provenance and report-contract validation;
+deterministic mock mode and controlled real-provider validation;
+CI workflows for tests, security checks, and provider smoke tests.
+---
+🤝 Contributing
+Fork the repository.
+Create a focused branch:
+```bash
+git checkout -b feature/your-feature
+```
+Install development dependencies:
+```bash
+cd backend
+pip install -r requirements-dev.txt
+```
+Run the backend checks:
+```bash
+ruff check . --select E9,F63,F7,F82
+bandit -r core agents main.py -ll -ii --skip B104
+python -m pytest tests -v \
+  --cov=core.risk_engine \
+  --cov-report=term-missing \
+  --cov-fail-under=90
+```
+Build the frontend:
+```bash
+cd ../frontend
+npm install
+npm run build
+```
+Commit, push, and open a pull request with:
+the problem being solved;
+the files changed;
+test evidence;
+security or provider implications;
+documentation updates.
+Do not include `.env` files, API keys, proxy credentials, temporary tokens, live report artifacts containing sensitive data, or authenticated MCP URLs.
+---
+📄 License
+This project is licensed under the MIT License. See `LICENSE`.
 Copyright (c) 2026 Jxxy123
-
 ---
-
 <div align="center">
-
 <br />
-
-Built for the **lablab.ai × Bright Data Hackathon 2026**
-
+Sentinel Web-Risk Intelligence
+Confirm identity. Validate evidence. Calibrate uncertainty.
 <br />
-
-**Sentinel Web-Risk** — *Trust nothing. Verify everything. Predict before it happens.*
-
+![Bright Data](https://img.shields.io/badge/Live%20Web-Bright%20Data-0066FF?style=for-the-badge)
+ 
+![CrewAI](https://img.shields.io/badge/Agents-CrewAI-FF6B00?style=for-the-badge)
+ 
+![Speechmatics](https://img.shields.io/badge/Voice-Speechmatics-FF2D55?style=for-the-badge&logo=microphone&logoColor=white)
 <br />
-
-[![Bright Data](https://img.shields.io/badge/Powered%20by-Bright%20Data-0066FF?style=for-the-badge&logoColor=white)](https://brightdata.com)
-&nbsp;
-[![CrewAI](https://img.shields.io/badge/Built%20with-CrewAI-FF6B00?style=for-the-badge&logoColor=white)](https://crewai.com)
-&nbsp;
-[![Speechmatics](https://img.shields.io/badge/Speechmatics-Voice%20Ingestion-FF2D55?style=for-the-badge&logo=microphone&logoColor=white)](https://speechmatics.com)
-&nbsp;
-[![lablab.ai](https://img.shields.io/badge/Submitted%20to-lablab.ai-7B61FF?style=for-the-badge&logoColor=white)](https://lablab.ai)
-
-<br />
-
 </div>
