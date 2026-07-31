@@ -12,6 +12,7 @@
     "@radix-ui/react-dialog": "^1.1.0",
     "@radix-ui/react-progress": "^1.1.0",
     "@radix-ui/react-tooltip": "^1.1.0",
+    "@speechmatics/real-time-client": "8.5.1",
     "axios": "^1.7.0",
     "clsx": "^2.1.1",
     "framer-motion": "^11.3.0",

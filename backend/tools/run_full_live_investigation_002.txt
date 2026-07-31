@@ -1,0 +1,14 @@
+Controlled full live Sentinel investigation: run 002
+Vendor: Microsoft
+Expected investigations: 1
+Expected direct SERP requests: 4
+Expected Remote MCP search calls: 1
+Expected normalized MCP results: at least 1
+Expected Web Unlocker calls: up to 1
+Expected MCP scraper calls: 0 unless Web Unlocker returns no usable content
+Expected Data Center proxy calls: up to 1
+Expected ISP proxy calls: 0 unless Data Center fails
+Expected CrewAI agents: 6
+Expected CrewAI tasks: 6
+Expected database writes: 0
+Reason: verify the complete corrected provider-to-report path after MCP normalization and provider-aware validation fixes

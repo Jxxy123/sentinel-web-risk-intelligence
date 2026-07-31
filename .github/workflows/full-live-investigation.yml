@@ -1,0 +1,207 @@
+name: Controlled Full Live Investigation
+
+on:
+  push:
+    branches:
+      - testing/enterprise-readiness
+      - fix/truth-telemetry-hardening
+    paths:
+      - backend/tools/run_full_live_investigation_*.txt
+
+permissions:
+  contents: read
+
+concurrency:
+  group: controlled-full-live-investigation
+  cancel-in-progress: false
+
+jobs:
+  full-live-investigation:
+    name: One Complete Sentinel Investigation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      APP_ENV: testing
+      EXECUTION_MODE: real
+      PYTHONPATH: .
+      OTEL_SDK_DISABLED: "true"
+
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || 'https://api.aimlapi.com/v1' }}
+      FREE_TIER_MODEL: ${{ vars.FREE_TIER_MODEL || 'meta-llama/Llama-3.3-70B-Instruct-Turbo' }}
+
+      BRIGHT_DATA_API_KEY: ${{ secrets.BRIGHT_DATA_API_KEY }}
+
+      BRIGHT_DATA_SERP_ZONE: ${{ vars.BRIGHT_DATA_SERP_ZONE }}
+      BRIGHT_DATA_SERP_API_URL: ${{ vars.BRIGHT_DATA_SERP_API_URL || 'https://api.brightdata.com/request' }}
+
+      BRIGHT_DATA_WEB_UNLOCKER_ZONE: ${{ vars.BRIGHT_DATA_WEB_UNLOCKER_ZONE }}
+      BRIGHT_DATA_WEB_UNLOCKER_URL: ${{ vars.BRIGHT_DATA_WEB_UNLOCKER_URL || 'https://api.brightdata.com/request' }}
+
+      BRIGHT_DATA_MCP_BASE_URL: ${{ vars.BRIGHT_DATA_MCP_BASE_URL || 'https://mcp.brightdata.com/mcp' }}
+      BRIGHT_DATA_MCP_TOOLS: ${{ vars.BRIGHT_DATA_MCP_TOOLS }}
+      BRIGHT_DATA_MCP_UNLOCKER_ZONE: ${{ vars.BRIGHT_DATA_MCP_UNLOCKER_ZONE }}
+      BRIGHT_DATA_MCP_PRO: "false"
+
+      BRIGHT_DATA_PROXY_HOST: ${{ vars.BRIGHT_DATA_PROXY_HOST || 'brd.superproxy.io' }}
+      BRIGHT_DATA_PROXY_PORT: ${{ vars.BRIGHT_DATA_PROXY_PORT || '33335' }}
+      BRIGHT_DATA_PROXY_USER: ${{ secrets.BRIGHT_DATA_PROXY_USER }}
+      BRIGHT_DATA_PROXY_PASS: ${{ secrets.BRIGHT_DATA_PROXY_PASS }}
+      BRIGHT_DATA_ISP_PROXY_USER: ${{ secrets.BRIGHT_DATA_ISP_PROXY_USER }}
+      BRIGHT_DATA_ISP_PROXY_PASS: ${{ secrets.BRIGHT_DATA_ISP_PROXY_PASS }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify protected full-investigation configuration
+        run: |
+          python - <<'PY'
+          import os
+
+          required = [
+              "OPENAI_API_KEY",
+              "OPENAI_BASE_URL",
+              "FREE_TIER_MODEL",
+              "BRIGHT_DATA_API_KEY",
+              "BRIGHT_DATA_SERP_ZONE",
+              "BRIGHT_DATA_SERP_API_URL",
+          ]
+
+          missing = [
+              name
+              for name in required
+              if not os.getenv(name, "").strip()
+          ]
+
+          if missing:
+              raise SystemExit(
+                  "Missing core full-investigation configuration: "
+                  + ", ".join(missing)
+              )
+
+          mcp_tools = {
+              tool.strip()
+              for tool in os.getenv(
+                  "BRIGHT_DATA_MCP_TOOLS",
+                  "",
+              ).split(",")
+              if tool.strip()
+          }
+
+          mcp_ready = bool(
+              os.getenv(
+                  "BRIGHT_DATA_MCP_BASE_URL",
+                  "",
+              ).strip()
+              and "search_engine" in mcp_tools
+          )
+
+          unlocker_ready = bool(
+              os.getenv(
+                  "BRIGHT_DATA_WEB_UNLOCKER_ZONE",
+                  "",
+              ).strip()
+              and os.getenv(
+                  "BRIGHT_DATA_WEB_UNLOCKER_URL",
+                  "",
+              ).strip()
+          )
+
+          data_center_proxy_ready = bool(
+              os.getenv(
+                  "BRIGHT_DATA_PROXY_USER",
+                  "",
+              ).strip()
+              and os.getenv(
+                  "BRIGHT_DATA_PROXY_PASS",
+                  "",
+              ).strip()
+          )
+
+          isp_proxy_ready = bool(
+              os.getenv(
+                  "BRIGHT_DATA_ISP_PROXY_USER",
+                  "",
+              ).strip()
+              and os.getenv(
+                  "BRIGHT_DATA_ISP_PROXY_PASS",
+                  "",
+              ).strip()
+          )
+
+          print(
+              "Protected core full-investigation "
+              "configuration is present."
+          )
+          print("AI key: protected and present")
+          print("Bright Data API key: protected and present")
+          print("SERP configuration: present")
+          print(
+              "Remote MCP optional path: "
+              + (
+                  "configured"
+                  if mcp_ready
+                  else "not fully configured"
+              )
+          )
+          print(
+              "Web Unlocker optional path: "
+              + (
+                  "configured"
+                  if unlocker_ready
+                  else "not fully configured"
+              )
+          )
+          print(
+              "Data Center proxy optional path: "
+              + (
+                  "configured"
+                  if data_center_proxy_ready
+                  else "not configured"
+              )
+          )
+          print(
+              "ISP proxy fallback: "
+              + (
+                  "configured"
+                  if isp_proxy_ready
+                  else "not configured"
+              )
+          )
+          print("Planned investigations: 1")
+          print("Planned direct SERP requests: 4")
+          print("Planned Remote MCP searches: up to 1")
+          print("Planned Web Unlocker requests: up to 1")
+          print("Planned CrewAI agents: 6")
+          print("Planned CrewAI tasks: 6")
+          PY
+
+      - name: Run one controlled full live investigation
+        run: python tools/full_live_investigation_smoke_test.py
+
+      - name: Upload sanitized investigation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: controlled-live-investigation-report-${{ github.run_number }}
+          path: backend/artifacts/controlled_live_investigation.json
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,4 @@
+Controlled Bright Data ISP Proxy smoke run: 001
+Expected ISP requests: 1
+Target: Bright Data official proxy test endpoint
+Reason: verify dedicated ISP proxy credentials

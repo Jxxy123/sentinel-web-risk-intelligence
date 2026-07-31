@@ -1,0 +1,38 @@
+Controlled vendor identity live smoke test — run 004
+
+Vendor input: ABC Trading
+
+Expected external activity:
+- Bright Data SERP searches: 2
+- Bright Data Remote MCP search_engine calls: 1
+- Page scrapes: 0
+- CrewAI/LLM calls: 0
+- Risk-scoring calls: 0
+- Database writes: 0
+- Investigation jobs: 0
+
+Required final authenticity checks:
+- LinkedIn posts, activities, articles, pulse pages, and feed updates must be rejected
+- only actual company-profile paths may become DIRECTORY_LEAD
+- DIRECTORY_LEAD must not increase candidate_evidence_records
+- DIRECTORY_LEAD must not appear in accepted_results
+- directory leads must be exposed only under directory_leads
+- source titles must explicitly support the requested company name
+- ABC Box must not match ABC Trading
+- typed vendor input must never be reused as proposed_legal_name without source-title support
+- government recalls, enforcement pages, warnings, court pages, advisories, and articles must remain AUTHORITATIVE_CONTEXT
+- AUTHORITATIVE_CONTEXT must never create or corroborate a vendor candidate
+- search-discovered pages must not be labelled OFFICIAL_WEBSITE
+- ambiguous or weak evidence must return MORE_INFORMATION_REQUIRED
+- no company may be silently selected without authenticated identity support
+
+Expected safe result for ambiguous input:
+- resolution_status: MORE_INFORMATION_REQUIRED
+- selected_candidate: null
+- candidate_evidence_records: 0
+- accepted_result_count: 0
+
+Accepted safe outcomes:
+- CONFIRMED
+- SELECTION_REQUIRED
+- MORE_INFORMATION_REQUIRED

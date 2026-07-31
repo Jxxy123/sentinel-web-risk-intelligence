@@ -1,63 +1,281 @@
 """
-Sentinel Web-Risk — Multi-Agent Orchestration System (CrewAI)
-Six specialized AI agents working autonomously to investigate vendor risk.
+Sentinel Web-Risk — Multi-Agent Orchestration System.
+
+Coordinates live Bright Data intelligence collection, deterministic risk
+grounding, and six sequential CrewAI agents for vendor-risk assessment.
 """
+
 import asyncio
+import inspect
 import json
-import os
-from typing import Dict, Any, List, Optional, Callable
-from datetime import datetime
+import re
+import time
+from datetime import datetime, timezone
+from typing import Any, Awaitable, Callable, Optional
+from urllib.parse import quote, quote_plus
 
-from crewai import Agent, Task, Crew, Process
+from crewai import Agent, Crew, LLM, Process, Task
 
-from crewai import LLM
-
+from core.brightdata import (
+    proxy_client,
+    serp_client,
+    web_unlocker,
+)
+from core.brightdata_remote_mcp import remote_mcp_client
 from core.config import settings
-from core.brightdata import serp_client, web_unlocker, mcp_client, proxy_client
+from core.orchestrator_truth import (
+    assess_search_results,
+    build_insufficient_evidence_language,
+    build_verified_key_findings,
+    serialize_evidence_record,
+)
+from core.report_calibration import (
+    build_calibrated_report_language,
+    build_evidence_provenance,
+    select_balanced_sources,
+)
 from core.risk_engine import (
-    analyze_text_for_signals,
-    calculate_risk_score,
     calculate_disruption_probability,
     format_signals_for_report,
 )
 
 
-def get_llm():
-    """
-    Build the LLM client using AI/ML API (OpenAI Compatible Endpoint).
-    This qualifies for the Hackathon Partner Prize and bypasses Free-Tier limits.
-    """
-    api_key = os.getenv("OPENAI_API_KEY")
-    base_url = os.getenv("OPENAI_BASE_URL", "https://api.aimlapi.com/v1")
-    model_name = os.getenv("FREE_TIER_MODEL", "meta-llama/Llama-3.3-70B-Instruct-Turbo")
+SearchResult = dict[str, str]
+ProgressCallback = Callable[
+    [dict[str, Any]],
+    Optional[Awaitable[None]],
+]
 
+
+MCP_SEARCH_TIMEOUT_SECONDS = 90
+MCP_SCRAPE_TIMEOUT_SECONDS = 90
+SERP_TIMEOUT_SECONDS = 120
+WEB_UNLOCKER_TIMEOUT_SECONDS = 90
+PROXY_TIMEOUT_SECONDS = 60
+CREW_TIMEOUT_SECONDS = 420
+
+MAX_VENDOR_NAME_LENGTH = 200
+MAX_SEARCH_RESULTS_FOR_TASK = 8
+MAX_SCRAPED_CONTENT_FOR_TASK = 4_000
+MAX_PROXY_CONTEXT_CHARACTERS = 1_000
+MAX_SOURCE_RECORDS_IN_REPORT = 12
+
+CREW_MAX_ATTEMPTS = 4
+CREW_MAX_RATE_LIMIT_WAIT_SECONDS = 90
+
+
+def get_llm() -> LLM:
+    """
+    Build the OpenAI-compatible LLM used by CrewAI.
+
+    Settings are environment-backed, allowing the provider endpoint and
+    model to change without modifying the orchestration code.
+    """
     return LLM(
-        model=f"openai/{model_name}",
-        api_key=api_key,
-        base_url=base_url,
+        model=f"openai/{settings.free_tier_model}",
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_base_url,
         temperature=0.1,
         max_retries=3,
         request_timeout=90,
     )
 
 
-# ─────────────────────────────────────────────
-# AGENT DEFINITIONS
-# ─────────────────────────────────────────────
+def _normalize_vendor_name(vendor_name: str) -> str:
+    """Validate and normalize a vendor name before external requests."""
+    normalized = " ".join(vendor_name.split())
 
-def build_recon_agent(llm) -> Agent:
+    if not normalized:
+        raise ValueError("Vendor name cannot be empty.")
+
+    if len(normalized) > MAX_VENDOR_NAME_LENGTH:
+        raise ValueError(
+            "Vendor name exceeds the supported length of "
+            f"{MAX_VENDOR_NAME_LENGTH} characters."
+        )
+
+    return normalized
+
+
+def _normalize_language(language: str) -> str:
+    """Return a normalized language token for reports and SERP requests."""
+    normalized = language.strip().upper()
+    return normalized or "EN"
+
+
+def _normalize_confirmed_identity_context(
+    identity_context: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate and minimize confirmed identity context for a report."""
+    if not isinstance(identity_context, dict):
+        raise ValueError("Confirmed identity context is required.")
+
+    if str(identity_context.get("status", "")).upper() != "CONFIRMED":
+        raise ValueError("Investigation requires CONFIRMED identity status.")
+
+    canonical_name = _normalize_vendor_name(
+        str(identity_context.get("canonical_name", ""))
+    )
+    confidence = identity_context.get("identity_confidence")
+
+    if (
+        not isinstance(confidence, (int, float))
+        or isinstance(confidence, bool)
+        or float(confidence) < 0.90
+    ):
+        raise ValueError("Confirmed identity confidence is below 0.90.")
+
+    return {
+        "status": "CONFIRMED",
+        "requested_name": str(identity_context.get("requested_name", "")).strip(),
+        "canonical_name": canonical_name,
+        "website": identity_context.get("website"),
+        "website_domain": identity_context.get("website_domain"),
+        "country": identity_context.get("country"),
+        "city": identity_context.get("city"),
+        "industry": identity_context.get("industry"),
+        "identity_confidence": round(float(confidence), 2),
+        "confidence_label": str(identity_context.get("confidence_label", "HIGH")),
+        "source_quality_labels": list(identity_context.get("source_quality_labels") or []),
+        "evidence_urls": list(identity_context.get("evidence_urls") or []),
+    }
+
+
+def _append_tool_once(
+    tools_used: list[str],
+    tool_name: str,
+) -> None:
+    """Record a provider only once and preserve execution order."""
+    if tool_name not in tools_used:
+        tools_used.append(tool_name)
+
+
+def _merge_search_results(
+    primary_results: list[SearchResult],
+    supplementary_results: list[SearchResult],
+) -> int:
+    """Merge unique supplementary results and return the number added."""
+    existing_urls = {
+        result.get("url", "").strip()
+        for result in primary_results
+        if result.get("url", "").strip()
+    }
+
+    added = 0
+
+    for result in supplementary_results:
+        result_url = result.get("url", "").strip()
+
+        if not result_url or result_url in existing_urls:
+            continue
+
+        primary_results.append(result)
+        existing_urls.add(result_url)
+        added += 1
+
+    return added
+
+
+def _build_search_summary(
+    search_results: list[SearchResult],
+    vendor_name: str,
+) -> str:
+    """Build a compact evidence summary for the CrewAI context."""
+    lines: list[str] = []
+
+    for result in search_results[:MAX_SEARCH_RESULTS_FOR_TASK]:
+        title = result.get("title", "").strip()
+        url = result.get("url", "").strip()
+        snippet = result.get("snippet", "").strip()
+
+        if not title or not url:
+            continue
+
+        lines.append(
+            f"- [{title}]({url}): {snippet[:250]}"
+        )
+
+    if lines:
+        return "\n".join(lines)
+
+    return (
+        f"No verified live-web results were retrieved for {vendor_name}. "
+        "Do not invent company facts or incidents. Explicitly state that "
+        "the available evidence is insufficient, keep confidence low, and "
+        "recommend additional evidence collection."
+    )
+
+
+def _parse_crew_json(raw_output: str) -> dict[str, Any]:
+    """Parse a CrewAI JSON result with a fenced-output fallback."""
+    normalized = raw_output.strip()
+
+    if not normalized:
+        return {}
+
+    try:
+        parsed = json.loads(normalized)
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        pass
+
+    cleaned = (
+        normalized
+        .replace("```json", "")
+        .replace("```JSON", "")
+        .replace("```", "")
+        .strip()
+    )
+
+    start = cleaned.find("{")
+    end = cleaned.rfind("}") + 1
+
+    if start < 0 or end <= start:
+        print("[JSON WARN] No JSON object found in CrewAI output.")
+        return {}
+
+    try:
+        parsed = json.loads(cleaned[start:end])
+        print("[JSON] Parsed CrewAI output through fallback extraction.")
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError as error:
+        print(
+            "[JSON WARN] CrewAI output could not be parsed: "
+            f"{type(error).__name__}"
+        )
+        return {}
+
+
+def _normalize_string_list(value: Any) -> list[str]:
+    """Return a clean list of non-empty strings."""
+    if not isinstance(value, list):
+        return []
+
+    return [
+        str(item).strip()
+        for item in value
+        if str(item).strip()
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Agent definitions
+# ---------------------------------------------------------------------------
+
+
+def build_recon_agent(llm: LLM) -> Agent:
+    """Build the live-web reconnaissance agent."""
     return Agent(
         role="Intelligence Recon Specialist",
         goal=(
-            "Search the live web using Bright Data SERP API to gather the most "
-            "current and relevant intelligence about a vendor company. Find news, "
-            "financial signals, hiring trends, and any warning signs."
+            "Assess current vendor risk using verified live-web evidence "
+            "from Bright Data SERP and Remote MCP search. Identify recent "
+            "financial, operational, legal, reputational, and cyber signals."
         ),
         backstory=(
-            "You are an elite intelligence analyst who specializes in rapid web reconnaissance. "
-            "You know exactly which search queries extract the highest-value signals about "
-            "company health, financial distress, and operational risk. You never rely on "
-            "assumptions — you always verify with live data."
+            "You are an evidence-first intelligence analyst. You separate "
+            "facts from inference, preserve source traceability, and never "
+            "invent incidents when evidence is incomplete."
         ),
         llm=llm,
         verbose=True,
@@ -65,19 +283,20 @@ def build_recon_agent(llm) -> Agent:
     )
 
 
-def build_scraping_agent(llm) -> Agent:
+def build_scraping_agent(llm: LLM) -> Agent:
+    """Build the protected-source extraction agent."""
     return Agent(
         role="Deep Web Extraction Specialist",
         goal=(
-            "Extract intelligence from protected, JavaScript-heavy, and geo-restricted "
-            "websites using Bright Data Web Unlocker. Access legal filings, regional "
-            "news, and protected data sources that standard tools cannot reach."
+            "Extract risk evidence from permitted public pages retrieved "
+            "through Bright Data Web Unlocker, Remote MCP scraping, and the "
+            "configured proxy network."
         ),
         backstory=(
-            "You are a technical intelligence extraction expert with deep knowledge of "
-            "web scraping and data extraction. You specialize in bypassing access barriers "
-            "to retrieve intelligence from sources others cannot access — legal databases, "
-            "regional portals, protected filings, and dynamic websites."
+            "You specialize in extracting useful evidence from complex, "
+            "JavaScript-heavy, geo-sensitive, and access-restricted public "
+            "sources while keeping every conclusion grounded in retrieved "
+            "content."
         ),
         llm=llm,
         verbose=True,
@@ -85,18 +304,18 @@ def build_scraping_agent(llm) -> Agent:
     )
 
 
-def build_verification_agent(llm) -> Agent:
+def build_verification_agent(llm: LLM) -> Agent:
+    """Build the source-credibility and entity-resolution agent."""
     return Agent(
         role="Source Credibility Analyst",
         goal=(
-            "Evaluate and validate the credibility of all gathered intelligence. "
-            "Filter noise, identify reliable sources, and assign credibility scores "
-            "to each piece of intelligence."
+            "Validate source credibility, relevance, recency, corroboration, "
+            "and whether each risk signal actually concerns the target vendor."
         ),
         backstory=(
-            "You are an expert fact-checker and intelligence analyst. You evaluate "
-            "sources for credibility, recency, and relevance. You distinguish between "
-            "reliable journalism, official filings, and unreliable speculation."
+            "You are an expert fact-checker. You distinguish official records "
+            "and reputable reporting from rumor, unrelated industry news, "
+            "duplicate claims, and outdated information."
         ),
         llm=llm,
         verbose=True,
@@ -104,18 +323,17 @@ def build_verification_agent(llm) -> Agent:
     )
 
 
-def build_intelligence_agent(llm) -> Agent:
+def build_intelligence_agent(llm: LLM) -> Agent:
+    """Build the risk-synthesis agent."""
     return Agent(
         role="Risk Intelligence Synthesizer",
         goal=(
-            "Synthesize all gathered intelligence into coherent risk signals. "
-            "Identify patterns, cross-reference signals, and produce a structured "
-            "risk intelligence profile for the vendor."
+            "Synthesize verified evidence into a coherent vendor-risk profile "
+            "without overstating certainty."
         ),
         backstory=(
-            "You are a senior risk intelligence analyst with expertise in enterprise "
-            "vendor risk assessment. You excel at finding hidden patterns in disparate "
-            "data sources and synthesizing them into actionable intelligence."
+            "You are a senior enterprise risk analyst skilled at connecting "
+            "corroborated signals while preserving evidence boundaries."
         ),
         llm=llm,
         verbose=True,
@@ -123,17 +341,17 @@ def build_intelligence_agent(llm) -> Agent:
     )
 
 
-def build_prediction_agent(llm) -> Agent:
+def build_prediction_agent(llm: LLM) -> Agent:
+    """Build the forward-looking risk agent."""
     return Agent(
         role="Predictive Risk Modeler",
         goal=(
-            "Estimate the probability and timeline of vendor operational disruption "
-            "based on gathered intelligence signals. Generate forward-looking risk predictions."
+            "Estimate disruption probability and time horizon using the "
+            "verified evidence and deterministic risk guidance supplied."
         ),
         backstory=(
-            "You are a predictive analyst who specializes in enterprise supply chain "
-            "risk modeling. You have studied hundreds of corporate collapses and can "
-            "identify the early warning signs that precede vendor failure."
+            "You create calibrated, evidence-aware forecasts. You avoid false "
+            "precision and reduce confidence when evidence is sparse."
         ),
         llm=llm,
         verbose=True,
@@ -141,17 +359,17 @@ def build_prediction_agent(llm) -> Agent:
     )
 
 
-def build_reporting_agent(llm) -> Agent:
+def build_reporting_agent(llm: LLM) -> Agent:
+    """Build the executive-reporting agent."""
     return Agent(
         role="Executive Intelligence Reporter",
         goal=(
-            "Generate a clear, professional, executive-level risk intelligence report "
-            "that enterprise procurement and compliance teams can act on immediately."
+            "Produce a concise, actionable, evidence-grounded JSON report for "
+            "procurement, compliance, and business-continuity teams."
         ),
         backstory=(
-            "You are a senior executive communications specialist who translates complex "
-            "intelligence analysis into clear, actionable business reports. Your reports "
-            "are read by C-suite executives and must be precise, concise, and actionable."
+            "You translate complex intelligence into clear executive language "
+            "without unsupported claims, hidden assumptions, or inflated risk."
         ),
         llm=llm,
         verbose=True,
@@ -159,171 +377,203 @@ def build_reporting_agent(llm) -> Agent:
     )
 
 
-# ─────────────────────────────────────────────
-# TASK DEFINITIONS
-# ─────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Task definitions
+# ---------------------------------------------------------------------------
+
 
 def build_tasks(
     vendor_name: str,
-    search_results: List[Dict],
+    search_results: list[SearchResult],
     scraped_content: str,
-    agents: Dict[str, Agent],
+    agents: dict[str, Agent],
     language: str = "EN",
-    pre_score: int = 5,
-    pre_level: str = "LOW",
-) -> List[Task]:
-
-    search_summary = "\n".join([
-        f"- [{r['title']}]({r['url']}): {r['snippet'][:200]}"  # 🧠 Truncate snippets to 200 chars max
-        for r in search_results[:5]  # ✅ Safe optimization: Top 5 dense results only
-        if r.get("title") and r.get("url")
-    ])
-
-    # If SERP returned nothing, give the LLM a clear mandate to use its knowledge
-    if not search_summary.strip():
-        search_summary = (
-            f"No live SERP results were retrieved for {vendor_name} at this time. "
-            "Use your training knowledge to assess this company's known risk profile, "
-            "public reputation, industry standing, and any historical risk events. "
-            "Clearly note that this analysis is based on pre-training knowledge, not live web data."
+    pre_score: int | None = None,
+    pre_level: str | None = None,
+    tools_used: Optional[list[str]] = None,
+) -> list[Task]:
+    """Build the six sequential, evidence-grounded CrewAI tasks."""
+    normalized_tools = tools_used or []
+    tools_json = json.dumps(
+        normalized_tools,
+        ensure_ascii=False,
+    )
+    search_summary = _build_search_summary(
+        search_results,
+        vendor_name,
+    )
+    scrape_context = (
+        scraped_content[:MAX_SCRAPED_CONTENT_FOR_TASK]
+        if scraped_content
+        else (
+            "No protected-source content was accepted as verified supplementary "
+            "evidence. Do not infer facts from missing data; continue only with "
+            "accepted search evidence and reduce confidence accordingly."
         )
+    )
+    deterministic_guidance = (
+        (
+            f"- Verified-evidence score: {pre_score}/100\n"
+            f"- Algorithmic threat level: {pre_level}"
+        )
+        if pre_score is not None and pre_level is not None
+        else (
+            "- Evidence assessment: INSUFFICIENT_EVIDENCE\n"
+            "- No defensible risk score or threat level is available.\n"
+            "- Do not reinterpret missing evidence as LOW risk."
+        )
+    )
 
     task_recon = Task(
         description=f"""
-        Analyze the following live web intelligence gathered for vendor: **{vendor_name}**
+Analyze the live intelligence collected for **{vendor_name}**.
 
-        SEARCH RESULTS FROM BRIGHT DATA SERP API:
-        {search_summary}
+VERIFIED SEARCH EVIDENCE:
+{search_summary}
 
-        Your task:
-        1. Identify the most significant risk signals from these search results
-        2. Categorize signals: Financial, Operational, Legal, Reputational, Cybersecurity
-        3. Rate severity of each signal: CRITICAL / HIGH / MEDIUM / LOW
-        4. List the top 10 most relevant intelligence findings
-        5. Note which signals are most recent (last 30-90 days)
+Your responsibilities:
+1. Identify material risk signals.
+2. Categorize each signal as Financial, Operational, Legal,
+   Reputational, or Cybersecurity.
+3. Assign CRITICAL, HIGH, MEDIUM, or LOW severity.
+4. Preserve the source URL beside every factual claim.
+5. Prioritize recent evidence and identify its publication timeframe.
+6. Clearly distinguish verified facts, inference, and missing evidence.
+7. Do not invent facts when the live evidence is insufficient.
 
-        Output as a structured analysis.
-        """,
+Return a structured evidence analysis.
+""",
         agent=agents["recon"],
-        expected_output="Structured list of risk signals with category, severity, and evidence",
+        expected_output=(
+            "Evidence-linked risk signals with categories, severity, "
+            "recency, and source traceability"
+        ),
     )
 
     task_scraping = Task(
         description=f"""
-        You have been provided with web content scraped from protected sources for: **{vendor_name}**
+Review the accepted, source-linked evidence context for **{vendor_name}**.
 
-        SCRAPED CONTENT (via Bright Data Web Unlocker):
-        {scraped_content[:3000] if scraped_content else "No scraped content available — proceed with search intelligence only."}
+VERIFIED SUPPLEMENTARY EVIDENCE:
+{scrape_context}
 
-        Your task:
-        1. Extract any additional risk signals from this content
-        2. Identify legal filings, regulatory notices, or compliance issues
-        3. Find any operational indicators (closures, delays, disruptions)
-        4. Note any financial distress indicators
+Your responsibilities:
+1. Extract legal, regulatory, compliance, operational, and financial signals.
+2. Ignore navigation text, boilerplate, unrelated entities, and duplicates.
+3. Mark every conclusion as verified fact or analyst inference.
+4. Do not claim an incident unless the retrieved content supports it.
+5. Supplement rather than repeat the reconnaissance findings.
 
-        Supplement the recon findings with this additional intelligence.
-        """,
+Return concise supplementary intelligence.
+""",
         agent=agents["scraping"],
-        expected_output="Supplementary risk intelligence from deep web extraction",
+        expected_output=(
+            "Supplementary evidence extracted from retrieved public content"
+        ),
         context=[task_recon],
     )
 
     task_verification = Task(
         description=f"""
-        Review all intelligence gathered about **{vendor_name}** and assess credibility.
+Validate all intelligence gathered about **{vendor_name}**.
 
-        Your task:
-        1. Evaluate each intelligence source for credibility (Official/News/Forum/Unknown)
-        2. Filter out noise, rumors, or unreliable signals
-        3. Assign confidence scores (0-1) to major findings
-        4. Identify which signals are corroborated by multiple sources
-        5. Flag any potentially misleading or outdated information
-        6. CRITICAL HYGIENE DIRECTIVE: Verify if the target vendor is the actual subject
-           of the threat signals. Filter out general industry news or unrelated content
-           that does not directly reflect the target company's corporate status.
+Your responsibilities:
+1. Classify each source as Official, Reputable News, Specialist,
+   Forum/Social, or Unknown.
+2. Evaluate recency, direct relevance, and corroboration.
+3. Confirm that the target vendor—not a similarly named entity—is the subject.
+4. Remove rumors, unrelated industry news, duplicates, and stale evidence.
+5. Assign confidence from 0.0 to 1.0 to major findings.
+6. Flag contradictions and unresolved uncertainty.
 
-        Output a verified, credibility-assessed intelligence package.
-        """,
+Return a credibility-assessed evidence package.
+""",
         agent=agents["verification"],
-        expected_output="Credibility-assessed intelligence with confidence scores",
+        expected_output=(
+            "Verified findings with confidence, corroboration, and exclusions"
+        ),
         context=[task_recon, task_scraping],
     )
 
     task_intelligence = Task(
         description=f"""
-        Synthesize all verified intelligence about **{vendor_name}** into a comprehensive risk profile.
+Synthesize the verified evidence about **{vendor_name}** into an
+enterprise vendor-risk profile.
 
-        Your task:
-        1. Identify the 5 most critical risk factors
-        2. Assess overall financial health indicators
-        3. Evaluate operational stability signals
-        4. Analyze legal and compliance exposure
-        5. Assess reputational risk trajectory
-        6. Identify any accelerating or converging risk patterns
+Your responsibilities:
+1. Identify up to five material risk factors.
+2. Assess financial, operational, legal, reputational, and cyber exposure.
+3. Explain the strongest evidence supporting each material risk.
+4. Identify converging patterns without double-counting duplicate evidence.
+5. Classify trajectory as Improving, Stable, Deteriorating, or Critical.
+6. Reduce certainty when evidence is limited or contradictory.
 
-        Produce a structured risk intelligence profile with:
-        - Primary Risk Category (Financial/Operational/Legal/Reputational/Cyber)
-        - Secondary risk categories
-        - Key risk drivers
-        - Risk trajectory (Improving/Stable/Deteriorating/Critical)
-        """,
+Return a structured, evidence-grounded profile.
+""",
         agent=agents["intelligence"],
-        expected_output="Comprehensive risk intelligence profile",
-        context=[task_verification]
+        expected_output="Comprehensive verified vendor-risk profile",
+        context=[task_verification],
     )
 
     task_prediction = Task(
         description=f"""
-        Based on all intelligence gathered about **{vendor_name}**, generate predictive risk assessments.
+Generate a calibrated forward-looking assessment for **{vendor_name}**.
 
-        Your task:
-        1. Estimate probability of operational disruption in next 90 days (0-100%)
-        2. Identify earliest warning indicators that materialized
-        3. Compare signal patterns to known historical vendor failures
-        4. Estimate time horizon of risk: Immediate (0-30d), Near-term (31-90d), Medium-term (91-180d)
-        5. Identify what would escalate or de-escalate this risk
+DETERMINISTIC GUIDANCE:
+{deterministic_guidance}
 
-        Include specific comparisons to any relevant historical cases if applicable.
-        """,
+Your responsibilities:
+1. Estimate operational disruption probability for the next 90 days.
+2. Select Immediate, Near-term, or Medium-term as the time horizon.
+3. Identify the evidence driving the forecast.
+4. Explain what would increase or reduce the estimated risk.
+5. Avoid false precision and reduce confidence when evidence is sparse.
+6. Treat deterministic metrics as guidance, not unquestionable truth.
+
+Return a predictive assessment with uncertainty.
+""",
         agent=agents["prediction"],
-        expected_output="Predictive risk assessment with probability estimates and timeline",
+        expected_output=(
+            "Calibrated disruption forecast with evidence and uncertainty"
+        ),
         context=[task_intelligence],
     )
 
     task_reporting = Task(
         description=f"""
-        Generate a complete executive intelligence report for **{vendor_name}**.
+Generate the final executive intelligence report for **{vendor_name}**.
 
-        GUIDANCE METRICS (USE FOR CONTEXT, BUT VERIFY VALIDITY):
-        - Calculated Keyword Score: {pre_score}/100
-        - Algorithmic Threat Level: {pre_level}
+DETERMINISTIC GUIDANCE:
+{deterministic_guidance}
 
-        CRITICAL SANITY FILTER:
-        If the calculated threat level is HIGH or CRITICAL, but your source analysis reveals 
-        the text matches are only referring to routine corporate filings, historical antitrust cases, 
-        or standard market news for an otherwise stable company, you are ordered to OVERRIDE the algorithmic 
-        threat level. Downgrade the output status to LOW or MEDIUM and write an objective, stable report.
+ACTUALLY USED BRIGHT DATA SERVICES:
+{tools_json}
 
-        Create a structured JSON report with these exact fields.
-        CRITICAL MULTILINGUAL MANDATE: Translate "executive_summary" and "risk_headline"
-        completely into this language code: {language}.
+SANITY REQUIREMENTS:
+- Override an inflated algorithmic level when verified evidence does not
+  support it.
+- Do not convert INSUFFICIENT_EVIDENCE into a LOW-risk conclusion.
+- Do not claim continuous monitoring or streaming unless explicitly enabled.
+- Do not list a Bright Data service that is absent from the supplied list.
+- State evidence limitations clearly.
+- Translate executive_summary and risk_headline into language code {language}.
+- Return valid JSON only, with no Markdown fences.
 
-        {{
-            "executive_summary": "3-4 sentences for C-suite in {language}. MANDATORY: First sentence MUST describe what {vendor_name} actually is — its core business model, industry, products/services — before any risk commentary.",
-            "risk_headline": "One powerful sentence describing the primary risk in {language}",
-            "primary_risk_category": "Financial|Operational|Legal|Reputational|Cybersecurity",
-            "key_findings": ["finding 1", "finding 2", "finding 3", "finding 4", "finding 5"],
-            "risk_trajectory": "Improving|Stable|Deteriorating|Critical",
-            "recommended_actions": ["action 1", "action 2", "action 3"],
-            "monitoring_signals": ["what to watch 1", "what to watch 2"],
-            "time_horizon": "Immediate|Near-term|Medium-term",
-            "bright_data_sources_used": ["SERP API", "Web Unlocker", "MCP Server"]
-        }}
-
-        Output ONLY the JSON. No preamble. No markdown fences.
-        """,
+Return exactly these fields:
+{{
+  "executive_summary": "3-4 sentences. The first sentence describes the vendor's verified business or states that business details could not be verified.",
+  "risk_headline": "One evidence-grounded sentence in {language}",
+  "primary_risk_category": "Financial|Operational|Legal|Reputational|Cybersecurity",
+  "key_findings": ["finding 1", "finding 2", "finding 3"],
+  "risk_trajectory": "Improving|Stable|Deteriorating|Critical",
+  "recommended_actions": ["action 1", "action 2", "action 3"],
+  "monitoring_signals": ["signal 1", "signal 2"],
+  "time_horizon": "Immediate|Near-term|Medium-term",
+  "bright_data_sources_used": {tools_json}
+}}
+""",
         agent=agents["reporting"],
-        expected_output="JSON executive intelligence report",
+        expected_output="Valid JSON executive vendor-risk report",
         context=[task_intelligence, task_prediction],
     )
 
@@ -337,231 +587,851 @@ def build_tasks(
     ]
 
 
-# ─────────────────────────────────────────────
-# MAIN ORCHESTRATOR
-# ─────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Main orchestrator
+# ---------------------------------------------------------------------------
+
 
 class SentinelOrchestrator:
-    """Main orchestrator that coordinates all agents and produces risk reports."""
+    """Coordinate evidence collection, CrewAI analysis, and final scoring."""
 
-    def __init__(self, progress_callback: Optional[Callable] = None):
+    def __init__(
+        self,
+        progress_callback: Optional[ProgressCallback] = None,
+        llm: Optional[LLM] = None,
+        serp: Any = None,
+        unlocker: Any = None,
+        mcp: Any = None,
+        proxy: Any = None,
+    ) -> None:
         self.progress_callback = progress_callback
-        self.llm = get_llm()
+        self.llm = llm
+        self.serp_client = serp or serp_client
+        self.web_unlocker = unlocker or web_unlocker
+        self.mcp_client = mcp or remote_mcp_client
+        self.proxy_client = proxy or proxy_client
 
-    async def _emit_progress(self, stage: str, message: str, progress: int):
-        if self.progress_callback:
-            await self.progress_callback({
+    async def _emit_progress(
+        self,
+        stage: str,
+        message: str,
+        progress: int,
+    ) -> None:
+        """Emit a progress event to either an async or synchronous callback."""
+        if self.progress_callback is None:
+            return
+
+        result = self.progress_callback(
+            {
                 "stage": stage,
                 "message": message,
                 "progress": progress,
-            })
-
-    async def investigate_vendor(self, vendor_name: str, language: str = "EN") -> Dict[str, Any]:
-        """
-        Full autonomous vendor investigation pipeline.
-        Returns complete risk report localized by language token.
-        """
-        await self._emit_progress("recon", f"Recon Agent searching live web for {vendor_name}...", 10)
-
-        # ── Step 1: Bright Data SERP multi-query sweep ──────────────────────
-        search_results = await serp_client.search_vendor_news(vendor_name, lang=language.lower())
-        print(f"[SERP] Returned {len(search_results)} results for '{vendor_name}'")
-
-        # ── Step 1b: MCP supplementary signal layer ──────────────────────────
-        try:
-            mcp_results = await mcp_client.search(f"{vendor_name} risk warning 2025 2026")
-            if mcp_results:
-                existing_urls = {r["url"] for r in search_results if "url" in r}
-                added = 0
-                for r in mcp_results:
-                    if r.get("url") not in existing_urls:
-                        search_results.append(r)
-                        added += 1
-                print(f"[MCP] Added {added} supplementary signals")
-        except Exception as mcp_err:
-            print(f"[MCP WARN] {mcp_err}")
-
-        await self._emit_progress("recon", f"Found {len(search_results)} live intelligence signals via SERP + MCP", 25)
-
-        # ── Step 2: Bright Data Web Unlocker — protected sources ─────────────
-        await self._emit_progress("scraping", "Scraping Agent accessing protected sources...", 35)
-        scraped_content = ""
-        try:
-            scraped_content = await web_unlocker.fetch_legal_filing(vendor_name) or ""
-            print(f"[UNLOCKER] Scraped {len(scraped_content)} chars")
-            
-            # 🌐 Route cross-border regional intelligence via Proxy Network
-            # This fetches supplementary data through residential proxy node to avoid regional filters
-            regional_intel = await proxy_client.fetch_with_proxy(f"https://en.wikipedia.org/wiki/{vendor_name}", country="us")
-            if regional_intel:
-                scraped_content += f"\n\n[Proxy Network Regional Context]: {regional_intel[:1000]}"
-                print("[PROXY CLIENT] Live cross-border routing layer successfully appended to context data")
-        except Exception as scrape_err:
-            print(f"[UNLOCKER WARN] {scrape_err}")
-
-        await self._emit_progress("analysis", "Pre-scoring indicators to ground LLM contexts...", 50)
-
-        # ── Step 2b: Pre-scoring Grounding Layer (Halts Hallucinations) ──
-        # Calculate scores using raw metrics first to set immutable textual constraints
-        raw_pool = " ".join([r.get("snippet", "") + " " + r.get("title", "") for r in search_results]) + scraped_content[:2000]
-        pre_signals = analyze_text_for_signals(raw_pool)
-        pre_score, pre_level, _ = calculate_risk_score(pre_signals)
-
-        # ── Step 3: CrewAI multi-agent deep analysis ──────────────────────────
-        agents = {
-            "recon":        build_recon_agent(self.llm),
-            "scraping":     build_scraping_agent(self.llm),
-            "verification": build_verification_agent(self.llm),
-            "intelligence": build_intelligence_agent(self.llm),
-            "prediction":   build_prediction_agent(self.llm),
-            "reporting":    build_reporting_agent(self.llm),
-        }
-
-        tasks = build_tasks(
-            vendor_name, search_results, scraped_content, agents, 
-            language=language, pre_score=pre_score, pre_level=pre_level
+            }
         )
 
-        await self._emit_progress("agents", "AI Agents running full investigation...", 65)
+        if inspect.isawaitable(result):
+            await result
 
-        crew = Crew(
-            agents=list(agents.values()),
-            tasks=tasks,
-            process=Process.sequential,
-            max_rpm=3,
-            verbose=False,
-        )
-
-        loop = asyncio.get_event_loop()
-        raw_output = "{}"
-
-        # Retry wrapper: waits a full 70s on rate-limit to reset Groq's 1-min TPM window.
-        import time, re as _re
-
-        def _kickoff_with_retry():
-            for attempt in range(4):
-                try:
-                    return str(crew.kickoff())
-                except Exception as err:
-                    err_str = str(err)
-                    if "rate_limit" not in err_str.lower() and "ratelimit" not in err_str.lower():
-                        print(f"[CREW ERROR] Non-rate-limit error: {err}")
-                        return "{}"
-                    wait_match = _re.search(r"try again in ([\d.]+)s", err_str)
-                    suggested = float(wait_match.group(1)) if wait_match else 60.0
-                    wait_secs = max(suggested + 5, 10)
-                    print(f"[CREW RETRY] Attempt {attempt+1}/4 — TPM limit hit. "
-                          f"Waiting {wait_secs:.0f}s for window reset...")
-                    time.sleep(wait_secs)
-            print("[CREW ERROR] All retries exhausted.")
-            return "{}"
-
-        try:
-            raw_output = await loop.run_in_executor(None, _kickoff_with_retry)
-            print(f"[CREW] Output preview: {raw_output[:300]}")
-        except Exception as crew_err:
-            print(f"[CREW ERROR] {crew_err}")
-
-        await self._emit_progress("scoring", "Calculating risk scores and predictions...", 80)
-
-        # ── Step 4: Parse LLM JSON output (bulletproof 2-pass) ───────────────
-        llm_report: Dict = {}
-        try:
-            llm_report = json.loads(raw_output)
-        except Exception:
+    @staticmethod
+    def _kickoff_crew_with_retry(crew: Crew) -> str:
+        """Run CrewAI with bounded rate-limit retries."""
+        for attempt in range(1, CREW_MAX_ATTEMPTS + 1):
             try:
-                cleaned = (
-                    raw_output
-                    .replace("```json", "")
-                    .replace("```", "")
-                    .strip()
+                return str(crew.kickoff())
+            except Exception as error:
+                error_text = str(error)
+                normalized_error = error_text.lower()
+
+                is_rate_limit = (
+                    "rate_limit" in normalized_error
+                    or "ratelimit" in normalized_error
+                    or "rate limit" in normalized_error
                 )
-                start = cleaned.find("{")
-                end = cleaned.rfind("}") + 1
-                if start >= 0 and end > start:
-                    llm_report = json.loads(cleaned[start:end])
-                    print("[JSON] Parsed via fence-strip fallback")
-                else:
-                    print("[JSON WARN] No JSON object found in crew output")
-            except Exception as parse_err:
-                print(f"[JSON WARN] Both parse attempts failed: {parse_err}")
 
-        verified_summary = llm_report.get("executive_summary", "")
-        verified_findings = " ".join(llm_report.get("key_findings", []))
-        verified_text = f"{verified_summary} {verified_findings}"
+                if not is_rate_limit:
+                    print(
+                        "[CREW ERROR] Non-rate-limit failure: "
+                        f"{type(error).__name__}"
+                    )
+                    return "{}"
 
-        if not verified_summary.strip() or len(verified_text) < 50:
-            verified_text = raw_pool
+                if attempt >= CREW_MAX_ATTEMPTS:
+                    break
 
-        signals = analyze_text_for_signals(verified_text)
-        score, level, confidence = calculate_risk_score(signals)
-        disruption_prob = calculate_disruption_probability(score, signals)
-        formatted_signals = format_signals_for_report(signals)
+                wait_match = re.search(
+                    r"try again in ([\d.]+)s",
+                    normalized_error,
+                )
+                suggested_wait = (
+                    float(wait_match.group(1))
+                    if wait_match
+                    else 60.0
+                )
+                wait_seconds = min(
+                    max(suggested_wait + 5.0, 10.0),
+                    CREW_MAX_RATE_LIMIT_WAIT_SECONDS,
+                )
 
-        await self._emit_progress("reporting", "Generating executive intelligence report...", 92)
+                print(
+                    "[CREW RETRY] "
+                    f"attempt={attempt}/{CREW_MAX_ATTEMPTS}; "
+                    f"waiting={wait_seconds:.0f}s"
+                )
+                time.sleep(wait_seconds)
 
-        # ── Step 5: Compile final report ──────────────────────────────────────
-        sig_count = len(signals)
-        cat_count = len(set(s["category"] for s in signals))
-        source_count = len(search_results)
+        print("[CREW ERROR] All retry attempts were exhausted.")
+        return "{}"
 
-        default_summary = (
-            f"{vendor_name} is a company analyzed by Sentinel's autonomous intelligence pipeline. "
-            f"Live web intelligence gathered {source_count} sources via Bright Data SERP API and Web Unlocker. "
-            f"The signal engine detected {sig_count} risk indicators across {cat_count} categories. "
-            f"Overall risk level is assessed as {level} with a disruption probability of {int(disruption_prob * 100)}%."
+    async def investigate_confirmed_vendor(
+        self,
+        identity_context: dict[str, Any],
+        language: str = "EN",
+    ) -> dict[str, Any]:
+        """Investigate only a strongly confirmed canonical identity."""
+        confirmed = _normalize_confirmed_identity_context(
+            identity_context
+        )
+        report = await self.investigate_vendor(
+            confirmed["canonical_name"],
+            language=language,
+            identity_context=confirmed,
+        )
+        report["identity_context"] = confirmed
+        raw = report.setdefault("raw_intelligence", {})
+        raw["identity_gate"] = "confirmed"
+        return report
+
+    async def investigate_vendor(
+        self,
+        vendor_name: str,
+        language: str = "EN",
+        identity_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Run the complete vendor investigation pipeline.
+
+        External provider failures are isolated so one unavailable source does
+        not prevent generation of a transparent, lower-confidence report.
+        """
+        normalized_vendor = _normalize_vendor_name(vendor_name)
+        normalized_language = _normalize_language(language)
+
+        tools_used: list[str] = []
+        search_results: list[SearchResult] = []
+        scraped_sections: list[str] = []
+        evidence_provenance: list[dict[str, Any]] = []
+        mcp_results_added = 0
+
+        await self._emit_progress(
+            "recon",
+            (
+                "Recon Agent collecting live intelligence for "
+                f"{normalized_vendor}..."
+            ),
+            10,
         )
 
-        final_report = {
-            "vendor_name": vendor_name,
+        # Step 1: direct Bright Data SERP collection.
+        try:
+            direct_results = await asyncio.wait_for(
+                self.serp_client.search_vendor_news(
+                    normalized_vendor,
+                    lang=normalized_language.lower(),
+                ),
+                timeout=SERP_TIMEOUT_SECONDS,
+            )
+            search_results.extend(direct_results)
+
+            if direct_results:
+                _append_tool_once(tools_used, "SERP API")
+
+            print(
+                "[SERP] "
+                f"vendor='{normalized_vendor}'; "
+                f"results={len(direct_results)}"
+            )
+        except Exception as error:
+            print(
+                "[SERP WARN] "
+                f"error={type(error).__name__}"
+            )
+
+        # Step 1b: genuine Remote MCP supplementary search.
+        current_year = datetime.now(timezone.utc).year
+        mcp_query = (
+            f'"{normalized_vendor}" vendor risk warning '
+            f"financial operational legal {current_year - 1} {current_year}"
+        )
+
+        try:
+            mcp_results = await asyncio.wait_for(
+                self.mcp_client.search(
+                    mcp_query,
+                    limit=10,
+                ),
+                timeout=MCP_SEARCH_TIMEOUT_SECONDS,
+            )
+            mcp_results_added = _merge_search_results(
+                search_results,
+                mcp_results,
+            )
+
+            if mcp_results:
+                _append_tool_once(
+                    tools_used,
+                    "Remote MCP search_engine",
+                )
+
+            print(
+                "[REMOTE MCP] "
+                f"results={len(mcp_results)}; "
+                f"unique_added={mcp_results_added}"
+            )
+        except Exception as error:
+            print(
+                "[REMOTE MCP WARN] "
+                f"error={type(error).__name__}"
+            )
+
+        await self._emit_progress(
+            "recon",
+            (
+                f"Collected {len(search_results)} unique live "
+                "intelligence signals."
+            ),
+            25,
+        )
+
+        # Step 2: Web Unlocker for a public legal-filing search page.
+        await self._emit_progress(
+            "scraping",
+            "Scraping Agent retrieving protected public evidence...",
+            35,
+        )
+
+        legal_filing_url = (
+            "https://www.sec.gov/cgi-bin/browse-edgar"
+            f"?company={quote_plus(normalized_vendor)}"
+            "&action=getcompany"
+        )
+
+        try:
+            unlocker_content = await asyncio.wait_for(
+                self.web_unlocker.fetch_legal_filing(
+                    normalized_vendor
+                ),
+                timeout=WEB_UNLOCKER_TIMEOUT_SECONDS,
+            )
+
+            if unlocker_content:
+                scraped_sections.append(
+                    "[Web Unlocker Legal Filing Context]\n"
+                    + unlocker_content
+                )
+                _append_tool_once(
+                    tools_used,
+                    "Web Unlocker",
+                )
+                evidence_provenance.append(
+                    build_evidence_provenance(
+                        provider="Web Unlocker",
+                        url=legal_filing_url,
+                        content=unlocker_content,
+                        status="success",
+                    )
+                )
+            else:
+                evidence_provenance.append(
+                    build_evidence_provenance(
+                        provider="Web Unlocker",
+                        url=legal_filing_url,
+                        content=None,
+                        status="no_usable_content",
+                    )
+                )
+
+            print(
+                "[WEB UNLOCKER] "
+                f"characters={len(unlocker_content or '')}"
+            )
+        except Exception as error:
+            evidence_provenance.append(
+                build_evidence_provenance(
+                    provider="Web Unlocker",
+                    url=legal_filing_url,
+                    content=None,
+                    status=(
+                        "error:"
+                        f"{type(error).__name__}"
+                    ),
+                )
+            )
+            print(
+                "[WEB UNLOCKER WARN] "
+                f"error={type(error).__name__}"
+            )
+
+        # Step 2b: use genuine MCP scraping only as an extraction fallback.
+        if not scraped_sections:
+            scrape_target = next(
+                (
+                    result.get("url", "").strip()
+                    for result in search_results
+                    if result.get("url", "").startswith(
+                        ("http://", "https://")
+                    )
+                ),
+                "",
+            )
+
+            if scrape_target:
+                try:
+                    mcp_markdown = await asyncio.wait_for(
+                        self.mcp_client.scrape(
+                            scrape_target
+                        ),
+                        timeout=MCP_SCRAPE_TIMEOUT_SECONDS,
+                    )
+
+                    if mcp_markdown:
+                        scraped_sections.append(
+                            "[Remote MCP Markdown Context]\n"
+                            + mcp_markdown
+                        )
+                        _append_tool_once(
+                            tools_used,
+                            "Remote MCP scrape_as_markdown",
+                        )
+                        evidence_provenance.append(
+                            build_evidence_provenance(
+                                provider=(
+                                    "Remote MCP "
+                                    "scrape_as_markdown"
+                                ),
+                                url=scrape_target,
+                                content=mcp_markdown,
+                                status="success",
+                            )
+                        )
+                    else:
+                        evidence_provenance.append(
+                            build_evidence_provenance(
+                                provider=(
+                                    "Remote MCP "
+                                    "scrape_as_markdown"
+                                ),
+                                url=scrape_target,
+                                content=None,
+                                status="no_usable_content",
+                            )
+                        )
+
+                    print(
+                        "[REMOTE MCP SCRAPE] "
+                        f"characters={len(mcp_markdown or '')}"
+                    )
+                except Exception as error:
+                    evidence_provenance.append(
+                        build_evidence_provenance(
+                            provider=(
+                                "Remote MCP "
+                                "scrape_as_markdown"
+                            ),
+                            url=scrape_target,
+                            content=None,
+                            status=(
+                                "error:"
+                                f"{type(error).__name__}"
+                            ),
+                        )
+                    )
+                    print(
+                        "[REMOTE MCP SCRAPE WARN] "
+                        f"error={type(error).__name__}"
+                    )
+
+        # Step 2c: Data Center proxy with ISP fallback for regional context.
+        wiki_slug = quote(
+            normalized_vendor.replace(" ", "_"),
+            safe="_()-",
+        )
+        regional_url = (
+            "https://en.wikipedia.org/wiki/"
+            + wiki_slug
+        )
+
+        try:
+            regional_content = await asyncio.wait_for(
+                self.proxy_client.fetch_with_fallback(
+                    regional_url,
+                    country="us",
+                ),
+                timeout=PROXY_TIMEOUT_SECONDS,
+            )
+
+            if regional_content:
+                scraped_sections.append(
+                    "[Proxy Network Regional Context]\n"
+                    + regional_content[
+                        :MAX_PROXY_CONTEXT_CHARACTERS
+                    ]
+                )
+                _append_tool_once(
+                    tools_used,
+                    "Proxy Network",
+                )
+                evidence_provenance.append(
+                    build_evidence_provenance(
+                        provider="Proxy Network",
+                        url=regional_url,
+                        content=regional_content,
+                        status="success",
+                    )
+                )
+            else:
+                evidence_provenance.append(
+                    build_evidence_provenance(
+                        provider="Proxy Network",
+                        url=regional_url,
+                        content=None,
+                        status="no_usable_content",
+                    )
+                )
+
+            print(
+                "[PROXY NETWORK] "
+                f"characters={len(regional_content or '')}"
+            )
+        except Exception as error:
+            evidence_provenance.append(
+                build_evidence_provenance(
+                    provider="Proxy Network",
+                    url=regional_url,
+                    content=None,
+                    status=(
+                        "error:"
+                        f"{type(error).__name__}"
+                    ),
+                )
+            )
+            print(
+                "[PROXY NETWORK WARN] "
+                f"error={type(error).__name__}"
+            )
+
+        scraped_content = "\n\n".join(
+            scraped_sections
+        )
+
+        await self._emit_progress(
+            "analysis",
+            "Grounding the AI analysis with deterministic risk signals...",
+            50,
+        )
+
+        evidence_bundle = assess_search_results(
+            normalized_vendor,
+            identity_context,
+            search_results,
+        )
+        evidence_assessment = evidence_bundle.assessment
+        verified_records = evidence_bundle.verified_records
+        rejected_records = evidence_bundle.rejected_records
+        pre_signals = list(
+            evidence_bundle.legacy_signals
+        )
+        score_available = evidence_bundle.score_available
+        pre_score = (
+            evidence_bundle.score
+            if score_available
+            else None
+        )
+        pre_level = (
+            evidence_bundle.level
+            if score_available
+            else None
+        )
+        pre_confidence = evidence_bundle.confidence
+        crew_search_results = list(
+            evidence_bundle.crew_search_results
+        )
+        crew_evidence_context = (
+            evidence_bundle.crew_evidence_context
+        )
+
+        print(
+            "[EVIDENCE VALIDATION] "
+            f"verified={len(verified_records)}; "
+            f"rejected={len(rejected_records)}; "
+            f"status={evidence_assessment.status}"
+        )
+
+        raw_output = "{}"
+        llm_execution_status = (
+            "skipped_insufficient_verified_evidence"
+        )
+
+        if score_available:
+            active_llm = self.llm or get_llm()
+
+            agents = {
+                "recon": build_recon_agent(active_llm),
+                "scraping": build_scraping_agent(active_llm),
+                "verification": build_verification_agent(
+                    active_llm
+                ),
+                "intelligence": build_intelligence_agent(
+                    active_llm
+                ),
+                "prediction": build_prediction_agent(
+                    active_llm
+                ),
+                "reporting": build_reporting_agent(
+                    active_llm
+                ),
+            }
+
+            tasks = build_tasks(
+                normalized_vendor,
+                crew_search_results,
+                crew_evidence_context,
+                agents,
+                language=normalized_language,
+                pre_score=pre_score,
+                pre_level=pre_level,
+                tools_used=tools_used,
+            )
+
+            await self._emit_progress(
+                "agents",
+                "Six AI agents are reviewing verified evidence...",
+                65,
+            )
+
+            crew = Crew(
+                agents=list(agents.values()),
+                tasks=tasks,
+                process=Process.sequential,
+                max_rpm=3,
+                verbose=False,
+            )
+            llm_execution_status = "running"
+
+            try:
+                raw_output = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self._kickoff_crew_with_retry,
+                        crew,
+                    ),
+                    timeout=CREW_TIMEOUT_SECONDS,
+                )
+                llm_execution_status = (
+                    "completed"
+                    if raw_output.strip() not in {"", "{}"}
+                    else "completed_without_structured_output"
+                )
+                print(
+                    "[CREW] Completed; "
+                    f"output_characters={len(raw_output)}"
+                )
+            except asyncio.TimeoutError:
+                llm_execution_status = "timeout_fallback"
+                print(
+                    "[CREW ERROR] Investigation exceeded "
+                    f"{CREW_TIMEOUT_SECONDS} seconds."
+                )
+            except Exception as error:
+                llm_execution_status = "error_fallback"
+                print(
+                    "[CREW ERROR] "
+                    f"error={type(error).__name__}"
+                )
+        else:
+            await self._emit_progress(
+                "verification",
+                (
+                    "Verification found insufficient directly attributed "
+                    "evidence; AI synthesis was skipped."
+                ),
+                65,
+            )
+
+        await self._emit_progress(
+            "scoring",
+            "Calculating calibrated risk scores and predictions...",
+            80,
+        )
+
+        llm_report = _parse_crew_json(
+            raw_output
+        )
+
+        # Final metrics are derived only from verified, source-linked evidence.
+        # LLM wording and rejected candidates never influence the score.
+        signals = pre_signals
+        score = (
+            evidence_bundle.score
+            if score_available
+            else 0
+        )
+        level = (
+            evidence_bundle.level
+            if score_available
+            else "LOW"
+        )
+        confidence = pre_confidence
+
+        disruption_probability = (
+            calculate_disruption_probability(
+                score,
+                signals,
+            )
+            if score_available
+            else 0.0
+        )
+        formatted_signals = format_signals_for_report(
+            signals
+        )
+
+        await self._emit_progress(
+            "reporting",
+            "Compiling the calibrated evidence-grounded report...",
+            92,
+        )
+
+        source_count = (
+            evidence_assessment.unique_source_count
+        )
+
+        if score_available:
+            calibrated_language = (
+                build_calibrated_report_language(
+                    vendor_name=normalized_vendor,
+                    score=score,
+                    level=level,
+                    confidence=confidence,
+                    disruption_probability=(
+                        disruption_probability
+                    ),
+                    formatted_signals=(
+                        formatted_signals
+                    ),
+                    source_count=source_count,
+                    tools_used=tools_used,
+                    llm_report=llm_report,
+                )
+            )
+            verified_findings = build_verified_key_findings(
+                verified_records
+            )
+
+            if verified_findings:
+                calibrated_language["key_findings"] = (
+                    verified_findings
+                )
+        else:
+            calibrated_language = (
+                build_insufficient_evidence_language(
+                    normalized_vendor,
+                    evidence_assessment,
+                )
+            )
+
+        selected_sources = select_balanced_sources(
+            crew_search_results,
+            max_total=MAX_SOURCE_RECORDS_IN_REPORT,
+            max_serp=8,
+            max_mcp=4,
+        )
+
+        verified_mcp_result_count = sum(
+            1
+            for result in crew_search_results
+            if "mcp"
+            in str(
+                result.get(
+                    "source",
+                    "",
+                )
+            ).lower()
+        )
+
+        generated_at = datetime.now(
+            timezone.utc
+        ).isoformat()
+
+        final_report: dict[str, Any] = {
+            "vendor_name": normalized_vendor,
+            "evidence_assessment_status": (
+                evidence_assessment.status
+            ),
+            "risk_score_available": score_available,
             "risk_score": score,
             "risk_level": level,
             "confidence_score": confidence,
-            "disruption_probability": disruption_prob,
-            "executive_summary": llm_report.get("executive_summary", default_summary),
-            "risk_headline": llm_report.get(
-                "risk_headline",
-                f"{vendor_name} — {level} risk profile based on {source_count} live intelligence sources.",
+            "disruption_probability": (
+                disruption_probability
             ),
-            "primary_risk_category": llm_report.get("primary_risk_category", "Operational"),
-            "key_findings": llm_report.get("key_findings", [
-                f"Sentinel gathered intelligence from {source_count} live web sources via Bright Data",
-                f"Signal engine detected {sig_count} risk indicators across {cat_count} risk categories",
-                f"Disruption probability estimated at {int(disruption_prob * 100)}% over the next 90 days",
-                f"Risk trajectory: {llm_report.get('risk_trajectory', 'Stable')}",
-                f"Continuous baseline real-time streaming scans active.",
-            ]),
-            "risk_trajectory": llm_report.get("risk_trajectory", "Stable"),
-            "recommended_actions": llm_report.get("recommended_actions", [
-                "Initiate enhanced vendor monitoring via Bright Data live feeds",
-                "Request updated financial and operational documentation from vendor",
-                "Assess alternative vendor options for business continuity planning",
-            ]),
-            "monitoring_signals": llm_report.get("monitoring_signals", []),
-            "time_horizon": llm_report.get("time_horizon", "Near-term"),
+            "executive_summary": (
+                calibrated_language[
+                    "executive_summary"
+                ]
+            ),
+            "risk_headline": (
+                calibrated_language[
+                    "risk_headline"
+                ]
+            ),
+            "primary_risk_category": (
+                calibrated_language[
+                    "primary_risk_category"
+                ]
+            ),
+            "key_findings": (
+                calibrated_language[
+                    "key_findings"
+                ]
+            ),
+            "risk_trajectory": (
+                calibrated_language[
+                    "risk_trajectory"
+                ]
+            ),
+            "recommended_actions": (
+                calibrated_language[
+                    "recommended_actions"
+                ]
+            ),
+            "monitoring_signals": (
+                calibrated_language[
+                    "monitoring_signals"
+                ]
+            ),
+            "time_horizon": (
+                calibrated_language[
+                    "time_horizon"
+                ]
+            ),
             "signals": formatted_signals,
-            "sources": [
-                {"url": r["url"], "title": r["title"]}
-                for r in search_results[:8]
-                if r.get("url") and r.get("title")
-            ],
+            "sources": selected_sources,
+            "evidence_provenance": (
+                evidence_provenance
+            ),
             "raw_intelligence": {
-                "search_results_count": source_count,
-                "scraped_content_chars": len(scraped_content),
-                "bright_data_tools_used": ["SERP API", "Web Unlocker", "MCP Server"],
-                "primary_risk_category": llm_report.get("primary_risk_category", "Operational"),
-                "risk_headline": llm_report.get(
-                    "risk_headline",
-                    f"{vendor_name} — {level} risk profile based on {source_count} live intelligence sources.",
+                "evidence_assessment_status": (
+                    evidence_assessment.status
                 ),
-                "risk_trajectory": llm_report.get("risk_trajectory", "Stable"),
-                "time_horizon": llm_report.get("time_horizon", "Near-term"),
-                "key_findings": llm_report.get("key_findings", []),
-                "recommended_actions": llm_report.get("recommended_actions", []),
+                "risk_score_available": score_available,
+                "risk_metric_compatibility_note": (
+                    "risk_score, risk_level, and disruption_probability are "
+                    "compatibility placeholders when risk_score_available "
+                    "is false."
+                ),
+                "verified_evidence_count": len(
+                    verified_records
+                ),
+                "rejected_evidence_count": len(
+                    rejected_records
+                ),
+                "verified_source_count": (
+                    evidence_assessment.unique_source_count
+                ),
+                "authoritative_source_count": (
+                    evidence_assessment.authoritative_source_count
+                ),
+                "evidence_coverage_message": (
+                    evidence_assessment.coverage_message
+                ),
+                "verified_evidence": [
+                    serialize_evidence_record(record)
+                    for record in verified_records
+                ],
+                "rejected_evidence": [
+                    serialize_evidence_record(record)
+                    for record in rejected_records
+                ],
+                "search_results_count": len(
+                    search_results
+                ),
+                "verified_search_result_count": len(
+                    crew_search_results
+                ),
+                "mcp_unique_results_added": (
+                    mcp_results_added
+                ),
+                "verified_mcp_result_count": (
+                    verified_mcp_result_count
+                ),
+                "scraped_content_chars": len(
+                    scraped_content
+                ),
+                "bright_data_tools_used": (
+                    tools_used
+                ),
+                "primary_risk_category": (
+                    calibrated_language[
+                        "primary_risk_category"
+                    ]
+                ),
+                "risk_headline": (
+                    calibrated_language[
+                        "risk_headline"
+                    ]
+                ),
+                "risk_trajectory": (
+                    calibrated_language[
+                        "risk_trajectory"
+                    ]
+                ),
+                "time_horizon": (
+                    calibrated_language[
+                        "time_horizon"
+                    ]
+                ),
+                "key_findings": (
+                    calibrated_language[
+                        "key_findings"
+                    ]
+                ),
+                "recommended_actions": (
+                    calibrated_language[
+                        "recommended_actions"
+                    ]
+                ),
+                "evidence_provenance": (
+                    evidence_provenance
+                ),
+                "llm_execution_status": (
+                    llm_execution_status
+                ),
+                "llm_supporting_fields_received": (
+                    sorted(
+                        llm_report.keys()
+                    )
+                    if llm_report
+                    else []
+                ),
+                "scoring_source": (
+                    "verified_source_linked_evidence"
+                ),
+                "scoring_method": (
+                    "verified_sentence_level_evidence"
+                ),
+                "language_authority": (
+                    "deterministic_report_calibration"
+                ),
+                "assessment_type": (
+                    "point_in_time"
+                ),
             },
             "status": "completed",
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": generated_at,
         }
 
-        await self._emit_progress("complete", "Investigation complete.", 100)
+        await self._emit_progress(
+            "complete",
+            "Investigation complete.",
+            100,
+        )
+
         return final_report

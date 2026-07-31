@@ -1,0 +1,3 @@
+Controlled Bright Data SERP smoke run: 004
+Expected live requests: 1
+Reason: validate structured titles, URLs, and snippets

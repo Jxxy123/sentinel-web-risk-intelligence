@@ -1,0 +1,13 @@
+Controlled full live Sentinel investigation: run 001
+Vendor: Microsoft
+Expected investigations: 1
+Expected direct SERP requests: 4
+Expected Remote MCP search calls: 1
+Expected Web Unlocker calls: 1
+Expected Data Center proxy calls: 1
+Expected ISP proxy calls: 0 unless Data Center fails
+Expected MCP scraper calls: 0 unless Web Unlocker returns no content
+Expected CrewAI agents: 6
+Expected CrewAI tasks: 6
+Expected database writes: 0
+Reason: verify the complete live provider-to-report orchestration path

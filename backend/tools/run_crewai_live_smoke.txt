@@ -1,0 +1,8 @@
+Controlled live CrewAI smoke run: 001
+Expected agents: 1
+Expected tasks: 1
+Expected Bright Data calls: 0
+Expected MCP calls: 0
+Expected proxy calls: 0
+Expected database calls: 0
+Reason: verify the real CrewAI and configured LLM connection

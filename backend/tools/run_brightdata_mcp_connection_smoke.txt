@@ -1,0 +1,4 @@
+Controlled Bright Data Remote MCP connection run: 002
+Expected MCP sessions: 1
+Expected MCP web-data tool calls: 0
+Reason: verify corrected comma-separated MCP tool selection

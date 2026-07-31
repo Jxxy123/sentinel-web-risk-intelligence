@@ -1,0 +1,6 @@
+Controlled Bright Data MCP scraper run: 001
+Expected MCP sessions: 1
+Expected scrape_as_markdown calls: 1
+Expected search calls: 0
+Target: public example test page
+Reason: verify genuine Remote MCP scraping

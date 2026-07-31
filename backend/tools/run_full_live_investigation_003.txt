@@ -1,0 +1,21 @@
+Controlled full live Sentinel investigation: run 003
+Vendor: Microsoft
+Expected investigations: 1
+Expected direct SERP requests: 4
+Expected Remote MCP search calls: up to 1
+Expected Web Unlocker calls: up to 1
+Expected MCP scraper calls: 0 unless Web Unlocker returns no usable content
+Expected Data Center proxy calls: up to 1
+Expected ISP proxy calls: 0 unless Data Center fails
+Expected CrewAI agents: 6
+Expected CrewAI tasks: 6
+Expected database writes: 0
+
+Validation goals:
+- deterministic score remains based on collected live evidence
+- LOW-risk wording is not exaggerated
+- LOW-risk trajectory is calibrated to Stable
+- primary category matches deterministic signal weights
+- final citations include MCP sources when MCP adds unique results
+- successful scraped evidence includes provenance metadata and SHA-256
+- no credentials or raw scraped page body appear in the report

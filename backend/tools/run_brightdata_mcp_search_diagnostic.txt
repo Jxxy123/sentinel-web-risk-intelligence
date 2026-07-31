@@ -1,0 +1,9 @@
+Controlled Bright Data MCP search shape diagnostic: run 001
+Expected MCP sessions: 1
+Expected search_engine calls: 1
+Expected direct SERP calls: 0
+Expected Web Unlocker calls: 0
+Expected proxy calls: 0
+Expected CrewAI and LLM calls: 0
+Expected database calls: 0
+Reason: identify the live MCP response shape without repeating the full investigation

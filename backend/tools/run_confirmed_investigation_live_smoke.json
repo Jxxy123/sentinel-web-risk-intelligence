@@ -1,0 +1,10 @@
+{
+  "vendor_name": "Microsoft",
+  "website": "https://www.microsoft.com",
+  "country": "United States",
+  "city": null,
+  "industry": "Technology",
+  "language": "EN",
+  "expected_domain": "microsoft.com",
+  "minimum_identity_confidence": 0.9
+}

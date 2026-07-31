@@ -1,0 +1,94 @@
+name: Bright Data Data Center Proxy Smoke Test
+
+on:
+  push:
+    branches:
+      - testing/enterprise-readiness
+    paths:
+      - backend/tools/run_brightdata_proxy_smoke.txt
+
+permissions:
+  contents: read
+
+jobs:
+  live-proxy-smoke:
+    name: One Real Data Center Proxy Request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      BRIGHT_DATA_PROXY_USER: ${{ secrets.BRIGHT_DATA_PROXY_USER }}
+      BRIGHT_DATA_PROXY_PASS: ${{ secrets.BRIGHT_DATA_PROXY_PASS }}
+      BRIGHT_DATA_PROXY_HOST: ${{ vars.BRIGHT_DATA_PROXY_HOST }}
+      BRIGHT_DATA_PROXY_PORT: ${{ vars.BRIGHT_DATA_PROXY_PORT }}
+      BRIGHT_DATA_ZONE: ${{ vars.BRIGHT_DATA_ZONE }}
+      EXECUTION_MODE: real
+      PYTHONPATH: .
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify protected proxy configuration
+        run: |
+          python - <<'PY'
+          import os
+
+          required_values = {
+              "BRIGHT_DATA_PROXY_USER": os.getenv(
+                  "BRIGHT_DATA_PROXY_USER"
+              ),
+              "BRIGHT_DATA_PROXY_PASS": os.getenv(
+                  "BRIGHT_DATA_PROXY_PASS"
+              ),
+              "BRIGHT_DATA_PROXY_HOST": os.getenv(
+                  "BRIGHT_DATA_PROXY_HOST"
+              ),
+              "BRIGHT_DATA_PROXY_PORT": os.getenv(
+                  "BRIGHT_DATA_PROXY_PORT"
+              ),
+          }
+
+          missing = [
+              name
+              for name, value in required_values.items()
+              if not value
+          ]
+
+          if missing:
+              raise SystemExit(
+                  "Missing protected proxy configuration: "
+                  + ", ".join(missing)
+              )
+
+          print("Data Center Proxy configuration is present.")
+          print(
+              "Configured host: "
+              + required_values["BRIGHT_DATA_PROXY_HOST"]
+          )
+          print(
+              "Configured port: "
+              + required_values["BRIGHT_DATA_PROXY_PORT"]
+          )
+          print("Proxy username and password are protected.")
+          print("Planned proxy requests: exactly 1")
+          PY
+
+      - name: Run controlled Data Center Proxy smoke test
+        run: python tools/brightdata_proxy_smoke_test.py

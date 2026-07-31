@@ -1,9 +1,18 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import {
-  startInvestigation, getJobStatus, getRecentReports, getDashboardStats,
-  createJobWebSocket, getRiskColor,
-  type RiskReport, type DashboardStats, type InvestigationJob,
+  resolveVendorIdentity,
+  startInvestigation,
+  getJobStatus,
+  getRecentReports,
+  getDashboardStats,
+  createJobWebSocket,
+  getRiskColor,
+  type RiskReport,
+  type DashboardStats,
+  type InvestigationJob,
+  type VendorCandidate,
+  type VendorResolutionResponse,
 } from "@/lib/api";
 import RiskScoreRing from "@/components/dashboard/RiskScoreRing";
 import AgentStatusPanel from "@/components/dashboard/AgentStatusPanel";
@@ -12,6 +21,13 @@ import StatCard from "@/components/dashboard/StatCard";
 import IntelligenceFeed from "@/components/dashboard/IntelligenceFeed";
 import LiveAlertsPanel from "@/components/dashboard/LiveAlertsPanel";
 import GovernancePanel from "@/components/dashboard/GovernancePanel";
+import VendorIdentityPanel, {
+  type VendorIdentityDetails,
+} from "@/components/dashboard/VendorIdentityPanel";
+import {
+  cleanSpeechmaticsVendorCommand,
+  useSpeechmaticsVoice,
+} from "@/lib/useSpeechmaticsVoice";
 import {
   Shield, Search, AlertTriangle, Activity, Database,
   Zap, Globe, LayoutDashboard, Clock, FileText, Trash2, Download, Mic,
@@ -234,7 +250,6 @@ const DICTIONARY: Record<string, Record<string, string>> = {
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [vendorInput, setVendorInput] = useState("");
-  const [isListening, setIsListening] = useState(false);
   const [currentLanguage, setCurrentLanguage] = useState("EN");
   const [currentJob, setCurrentJob] = useState<InvestigationJob | null>(null);
   const [currentReport, setCurrentReport] = useState<RiskReport | null>(null);
@@ -242,54 +257,45 @@ export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [identityResolution, setIdentityResolution] =
+    useState<VendorResolutionResponse | null>(null);
+  const [identityDetails, setIdentityDetails] =
+    useState<VendorIdentityDetails>({
+      website: "",
+      country: "",
+      city: "",
+      industry: "",
+    });
+  const [isResolvingIdentity, setIsResolvingIdentity] =
+    useState(false);
   const [serpCalls, setSerpCalls] = useState(0);
   const [llmCost, setLlmCost] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
+  const {
+    isListening,
+    partialTranscript,
+    voiceStatus,
+    startListening,
+    stopListening,
+  } = useSpeechmaticsVoice({
+    language: currentLanguage,
+    onFinalTranscript: (transcript) => {
+      const cleanedInput =
+        cleanSpeechmaticsVendorCommand(transcript);
+
+      if (cleanedInput) {
+        setVendorInput(cleanedInput);
+        setIdentityResolution(null);
+      }
+    },
+    onError: (message) => {
+      setError(message || null);
+    },
+  });
+
   const t = DICTIONARY[currentLanguage] || DICTIONARY.EN;
-
-  const startVoiceCommand = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    
-    if (!SpeechRecognition) {
-      alert("Voice control is supported best on desktop Google Chrome or Edge!");
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.lang = 'en-US';
-    recognition.interimResults = false;
-
-    recognition.onstart = () => {
-      setIsListening(true);
-    };
-
-    recognition.onerror = (err: any) => {
-      console.error("Speechmatics Interface Error: ", err);
-      setIsListening(false);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      
-      const cleanedInput = transcript.toLowerCase()
-        .replace("scan ", "")
-        .replace("investigate ", "")
-        .replace("check ", "")
-        .trim();
-      
-      setVendorInput(cleanedInput);
-      handleInvestigate(cleanedInput);
-    };
-
-    recognition.start();
-  };
 
   const translateReportData = (report: RiskReport | null): RiskReport | null => {
     if (!report) return null;
@@ -326,37 +332,164 @@ export default function Dashboard() {
     } catch {}
   };
 
-  const handleInvestigate = async (vendor?: string) => {
-    const name = (vendor || vendorInput).trim();
-    if (!name) return;
-    setIsLoading(true); setError(null); setCurrentReport(null); setCurrentJob(null);
-    setSerpCalls(0); setLlmCost(0);
+  const launchAuthorizedInvestigation = async ({
+    vendorName,
+    authorizationId,
+  }: {
+    vendorName: string;
+    authorizationId: string;
+  }) => {
+    const { job_id } = await startInvestigation({
+      vendor_name: vendorName,
+      identity_authorization_id: authorizationId,
+      language: currentLanguage,
+    });
+
+    setCurrentJob({
+      job_id,
+      vendor_name: vendorName,
+      status: "queued",
+      progress: 0,
+      stage: "queued",
+      message: "Confirmed identity — investigation queued...",
+      report: null,
+      error: null,
+      started_at: new Date().toISOString(),
+    });
+
+    const onProgress = (data: InvestigationJob) => {
+      setCurrentJob(data);
+      setSerpCalls((previous) =>
+        Math.min(
+          previous + Math.floor(Math.random() * 2),
+          10,
+        ),
+      );
+      setLlmCost((previous) =>
+        parseFloat(
+          (
+            previous
+            + 0.08
+            + Math.random() * 0.12
+          ).toFixed(2),
+        ),
+      );
+    };
+
+    const onComplete = (data: InvestigationJob) => {
+      setCurrentJob(data);
+      setCurrentReport(data.report);
+      setIsLoading(false);
+      setIdentityResolution(null);
+      loadDashboardData();
+    };
+
+    const onError = (message: string) => {
+      setError(message);
+      setIsLoading(false);
+    };
 
     try {
-      const { job_id } = await startInvestigation({ 
-        vendor_name: name, 
-        language: currentLanguage 
+      wsRef.current?.close();
+      wsRef.current = createJobWebSocket(
+        job_id,
+        onProgress,
+        onComplete,
+        onError,
+      );
+    } catch {
+      startPolling(
+        job_id,
+        onProgress,
+        onComplete,
+        onError,
+      );
+    }
+  };
+
+  const handleInvestigate = async (
+    vendor?: string,
+    context?: Partial<VendorIdentityDetails>,
+  ) => {
+    const name = (vendor || vendorInput).trim();
+
+    if (!name) {
+      return;
+    }
+
+    const details = {
+      ...identityDetails,
+      ...context,
+    };
+
+    setIsLoading(true);
+    setIsResolvingIdentity(true);
+    setError(null);
+    setCurrentReport(null);
+    setCurrentJob(null);
+    setSerpCalls(0);
+    setLlmCost(0);
+
+    try {
+      const resolution = await resolveVendorIdentity({
+        vendor_name: name,
+        website: details.website,
+        country: details.country,
+        city: details.city,
+        industry: details.industry,
+        language: currentLanguage,
       });
-      setCurrentJob({ job_id, vendor_name: name, status: "queued", progress: 0,
-        stage: "queued", message: "Investigation queued...", report: null, error: null,
-        started_at: new Date().toISOString() });
 
-      const onProgress = (data: InvestigationJob) => {
-        setCurrentJob(data);
-        setSerpCalls(prev => Math.min(prev + Math.floor(Math.random() * 2), 10));
-        setLlmCost(prev => parseFloat((prev + 0.08 + Math.random() * 0.12).toFixed(2)));
-      };
-      const onComplete = (data: InvestigationJob) => {
-        setCurrentJob(data); setCurrentReport(data.report);
-        setIsLoading(false); loadDashboardData();
-      };
-      const onError = (err: string) => { setError(err); setIsLoading(false); };
+      setIdentityResolution(resolution);
 
-      try {
-        wsRef.current?.close();
-        wsRef.current = createJobWebSocket(job_id, onProgress, onComplete, onError);
-      } catch { startPolling(job_id, onProgress, onComplete, onError); }
-    } catch (e: any) { setError(e.message || "Failed to start investigation"); setIsLoading(false); }
+      if (
+        resolution.resolution_status !== "CONFIRMED"
+        || !resolution.selected_candidate
+        || !resolution.investigation_authorization
+      ) {
+        setIsLoading(false);
+        return;
+      }
+
+      const canonicalName =
+        resolution.selected_candidate.legal_name;
+      setVendorInput(canonicalName);
+
+      await launchAuthorizedInvestigation({
+        vendorName: canonicalName,
+        authorizationId:
+          resolution.investigation_authorization
+            .authorization_id,
+      });
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unable to start the identity-first investigation.",
+      );
+      setIsLoading(false);
+    } finally {
+      setIsResolvingIdentity(false);
+    }
+  };
+
+  const handleCandidateSelection = (
+    candidate: VendorCandidate,
+  ) => {
+    const candidateDetails: VendorIdentityDetails = {
+      website: candidate.website || "",
+      country: candidate.country || "",
+      city: candidate.city || "",
+      industry: candidate.industry || "",
+    };
+
+    setVendorInput(candidate.legal_name);
+    setIdentityDetails(candidateDetails);
+
+    void handleInvestigate(
+      candidate.legal_name,
+      candidateDetails,
+    );
   };
 
   const startPolling = (
@@ -610,27 +743,50 @@ export default function Dashboard() {
               <div className="flex gap-3">
                 <div className="flex-1 relative">
                   <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input type="text" value={vendorInput} onChange={e => setVendorInput(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && handleInvestigate()}
+                  <input
+                    type="text"
+                    value={
+                      isListening && partialTranscript
+                        ? partialTranscript
+                        : vendorInput
+                    }
+                    onChange={(event) => {
+                      setVendorInput(event.target.value);
+                      setIdentityResolution(null);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        void handleInvestigate();
+                      }
+                    }}
                     placeholder={t.placeholder}
                     className="search-input w-full pl-12 pr-12 py-4 rounded-xl text-base text-white placeholder-slate-400 bg-slate-950/50 border border-slate-800 focus:border-blue-500 transition-colors" disabled={isLoading} />
                   
                   {/* Glowing Speechmatics Microphone Toggle Button */}
                   <button
                     type="button"
-                    onClick={startVoiceCommand}
+                    onClick={() => {
+                      setError(null);
+                      if (isListening) {
+                        void stopListening();
+                      } else {
+                        void startListening();
+                      }
+                    }}
                     disabled={isLoading}
                     className={`absolute right-4 top-1/2 -translate-y-1/2 p-1.5 rounded-lg transition-all ${
                       isListening 
                         ? 'bg-red-500 text-white animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.5)] border border-red-400' 
                         : 'text-slate-400 hover:text-blue-400 hover:bg-slate-900/50'
                     }`}
-                    title="Voice Command via Speechmatics"
+                    title={isListening
+                      ? "Stop Speechmatics transcription"
+                      : "Start Speechmatics transcription"}
                   >
                     <Mic size={16} />
                   </button>
                 </div>
-                <button onClick={() => handleInvestigate()} disabled={isLoading || !vendorInput.trim()}
+                <button onClick={() => void handleInvestigate()} disabled={isLoading || !vendorInput.trim()}
                   className="btn-primary px-8 py-4 rounded-xl text-base font-semibold whitespace-nowrap transition-all disabled:opacity-40 disabled:cursor-not-allowed min-w-[150px]">
                   {isLoading
                     ? <span className="flex items-center justify-center gap-2">
@@ -644,13 +800,13 @@ export default function Dashboard() {
               {/* Securely Anchored Speechmatics Status Tracker Bar */}
               <div className="flex items-center gap-1.5 px-1 text-[11px] font-mono tracking-wider text-slate-400 transition-all duration-200">
                 <span className={`w-1.5 h-1.5 rounded-full ${isListening ? 'bg-red-500 animate-ping' : 'bg-[#00E87A]'}`}></span>
-                <span>{isListening ? "SPEECHMATICS AUDIO CHANNELS: ACTIVE / LISTENING..." : "SPEECHMATICS VOICE STREAMING: LINKED & READY"}</span>
+                <span>{voiceStatus}</span>
               </div>
 
               <div className="flex items-center gap-3 pt-2 flex-wrap justify-center">
                 <span className="mono text-xs text-slate-400 tracking-wider font-bold">{t.pipelines}</span>
                 {DEMO_VENDORS.map(v => (
-                  <button key={v} onClick={() => { setVendorInput(v); handleInvestigate(v); }}
+                  <button key={v} onClick={() => { setVendorInput(v); setIdentityResolution(null); void handleInvestigate(v); }}
                     disabled={isLoading}
                     className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white border border-slate-700 hover:border-blue-500/50 bg-slate-900/40 hover:bg-slate-800/60 transition-all disabled:opacity-40"
                     style={{ transitionDuration: '150ms' }}>
@@ -659,6 +815,25 @@ export default function Dashboard() {
                 ))}
               </div>
             </div>
+
+            {identityResolution && (
+              <VendorIdentityPanel
+                resolution={identityResolution}
+                details={identityDetails}
+                isResolving={isResolvingIdentity}
+                onDetailsChange={setIdentityDetails}
+                onRetry={() => {
+                  void handleInvestigate();
+                }}
+                onSelectCandidate={
+                  handleCandidateSelection
+                }
+                onDismiss={() => {
+                  setIdentityResolution(null);
+                  setIsLoading(false);
+                }}
+              />
+            )}
 
             {error && (
               <div className="mt-5 max-w-2xl mx-auto p-3.5 rounded-xl flex items-center gap-2.5"
