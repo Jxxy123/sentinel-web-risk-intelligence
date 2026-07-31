@@ -162,16 +162,37 @@ def _validate_sources(
     report: dict[str, Any],
     raw_intelligence: dict[str, Any],
     tools_used: set[str],
+    *,
+    require_citations: bool,
 ) -> None:
+    """Validate the final verified citation set.
+
+    Scored reports must cite at least one verified source. An
+    INSUFFICIENT_EVIDENCE report must not promote rejected candidates into
+    the final citation set merely to satisfy a non-empty-list requirement.
+    """
     sources = report.get(
         "sources"
     )
 
     _require(
-        isinstance(sources, list)
-        and bool(sources),
-        "The report must contain cited sources.",
+        isinstance(sources, list),
+        "sources must be a list.",
     )
+
+    if require_citations:
+        _require(
+            bool(sources),
+            "A scored report must contain cited sources.",
+        )
+    else:
+        _require(
+            not sources,
+            (
+                "INSUFFICIENT_EVIDENCE reports must not cite "
+                "rejected or unverified sources."
+            ),
+        )
 
     seen_urls: set[str] = set()
 
@@ -230,6 +251,13 @@ def _validate_sources(
 
     if verified_mcp_results > 0:
         _require(
+            require_citations,
+            (
+                "Verified MCP evidence cannot exist when the "
+                "assessment status is INSUFFICIENT_EVIDENCE."
+            ),
+        )
+        _require(
             "Remote MCP search_engine"
             in tools_used,
             (
@@ -237,7 +265,6 @@ def _validate_sources(
                 "Remote MCP search tool was not recorded."
             ),
         )
-
         _require(
             any(
                 "mcp" in _clean_text(
@@ -362,13 +389,223 @@ def _validate_provenance(
         )
 
 
+VALID_EVIDENCE_ASSESSMENT_STATUSES = {
+    "COMPLETED",
+    "INSUFFICIENT_EVIDENCE",
+}
+
+
+def _non_negative_integer(
+    value: Any,
+) -> bool:
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and value >= 0
+    )
+
+
+def _resolve_report_outcome(
+    report: dict[str, Any],
+    raw_intelligence: dict[str, Any],
+) -> tuple[str, bool]:
+    """Return and validate the evidence outcome and score availability."""
+    report_status = _clean_text(
+        report.get("evidence_assessment_status")
+    ).upper()
+    raw_status = _clean_text(
+        raw_intelligence.get(
+            "evidence_assessment_status"
+        )
+    ).upper()
+
+    assessment_status = (
+        report_status
+        or raw_status
+        or "COMPLETED"
+    )
+
+    _require(
+        assessment_status
+        in VALID_EVIDENCE_ASSESSMENT_STATUSES,
+        "Report contains an invalid evidence_assessment_status.",
+    )
+
+    if report_status and raw_status:
+        _require(
+            report_status == raw_status,
+            (
+                "Top-level and raw_intelligence evidence statuses "
+                "must match."
+            ),
+        )
+
+    report_available = report.get(
+        "risk_score_available"
+    )
+    raw_available = raw_intelligence.get(
+        "risk_score_available"
+    )
+
+    available_values = [
+        value
+        for value in (
+            report_available,
+            raw_available,
+        )
+        if value is not None
+    ]
+
+    for value in available_values:
+        _require(
+            isinstance(value, bool),
+            "risk_score_available must be a boolean.",
+        )
+
+    if len(available_values) == 2:
+        _require(
+            available_values[0] == available_values[1],
+            (
+                "Top-level and raw_intelligence "
+                "risk_score_available values must match."
+            ),
+        )
+
+    score_available = (
+        available_values[0]
+        if available_values
+        else assessment_status == "COMPLETED"
+    )
+
+    _require(
+        score_available
+        == (assessment_status == "COMPLETED"),
+        (
+            "risk_score_available contradicts "
+            "evidence_assessment_status."
+        ),
+    )
+
+    return assessment_status, score_available
+
+
+def _validate_insufficient_evidence_outcome(
+    report: dict[str, Any],
+    raw_intelligence: dict[str, Any],
+) -> None:
+    """Validate a truthful no-score outcome without treating it as LOW risk."""
+    _require(
+        report.get("risk_score") == 0,
+        (
+            "INSUFFICIENT_EVIDENCE must use risk_score=0 only as "
+            "an explicitly unavailable compatibility placeholder."
+        ),
+    )
+    _require(
+        _clean_text(
+            report.get("risk_level")
+        ).upper() == "LOW",
+        (
+            "INSUFFICIENT_EVIDENCE must use risk_level=LOW only as "
+            "an explicitly unavailable compatibility placeholder."
+        ),
+    )
+    _require(
+        report.get("disruption_probability") == 0,
+        (
+            "INSUFFICIENT_EVIDENCE must not expose a disruption "
+            "probability."
+        ),
+    )
+    _require(
+        report.get("signals") == [],
+        "INSUFFICIENT_EVIDENCE reports must not contain scored signals.",
+    )
+    _require(
+        _clean_text(
+            report.get("primary_risk_category")
+        ) == "Operational",
+        (
+            "INSUFFICIENT_EVIDENCE must retain the neutral "
+            "Operational compatibility category."
+        ),
+    )
+    _require(
+        _clean_text(
+            report.get("risk_trajectory")
+        ) == "Stable",
+        (
+            "INSUFFICIENT_EVIDENCE must retain the neutral Stable "
+            "compatibility trajectory."
+        ),
+    )
+
+    summary = _clean_text(
+        report.get("executive_summary")
+    ).lower()
+    headline = _clean_text(
+        report.get("risk_headline")
+    ).lower()
+
+    _require(
+        (
+            "insufficient" in summary
+            or "could not assign" in summary
+        )
+        and "insufficient" in headline,
+        (
+            "INSUFFICIENT_EVIDENCE language must clearly state that "
+            "no defensible score was assigned."
+        ),
+    )
+
+    for field in (
+        "verified_evidence_count",
+        "verified_source_count",
+        "authoritative_source_count",
+        "verified_mcp_result_count",
+    ):
+        value = raw_intelligence.get(field, 0)
+        _require(
+            _non_negative_integer(value)
+            and value == 0,
+            f"{field} must be zero for INSUFFICIENT_EVIDENCE.",
+        )
+
+    verified_evidence = raw_intelligence.get(
+        "verified_evidence",
+        [],
+    )
+    _require(
+        isinstance(verified_evidence, list)
+        and not verified_evidence,
+        (
+            "INSUFFICIENT_EVIDENCE must not contain verified "
+            "evidence records."
+        ),
+    )
+
+    _require(
+        raw_intelligence.get(
+            "llm_execution_status"
+        )
+        == "skipped_insufficient_verified_evidence",
+        (
+            "AI synthesis must be skipped when verified evidence is "
+            "insufficient."
+        ),
+    )
+
+
 def validate_calibrated_report_contract(
     report: dict[str, Any],
 ) -> None:
     """
     Raise ValueError when a final report violates calibration or provenance.
 
-    This function performs no network, LLM, database, or provider calls.
+    This function accepts two valid completed outcomes:
+    - COMPLETED: a verified evidence score with mandatory citations.
+    - INSUFFICIENT_EVIDENCE: no score and no promoted citations.
     """
     _require(
         isinstance(report, dict),
@@ -379,27 +616,24 @@ def validate_calibrated_report_contract(
         "Report status must be completed.",
     )
 
-    level = _clean_text(
-        report.get("risk_level")
-    ).upper()
-
+    raw_intelligence = report.get(
+        "raw_intelligence"
+    )
     _require(
-        level in VALID_RISK_LEVELS,
-        "Report contains an invalid risk_level.",
+        isinstance(raw_intelligence, dict),
+        "raw_intelligence must be an object.",
     )
 
-    score = report.get(
-        "risk_score"
-    )
-    _validate_level_score_alignment(
-        score,
-        level,
+    assessment_status, score_available = (
+        _resolve_report_outcome(
+            report,
+            raw_intelligence,
+        )
     )
 
     confidence = report.get(
         "confidence_score"
     )
-
     _require(
         isinstance(confidence, (int, float))
         and not isinstance(confidence, bool)
@@ -415,52 +649,61 @@ def validate_calibrated_report_contract(
         "signals must be a list.",
     )
 
-    expected_category = derive_primary_category(
-        signals
-    )
-    actual_category = _clean_text(
-        report.get("primary_risk_category")
-    )
-
-    _require(
-        actual_category == expected_category,
-        (
-            "primary_risk_category contradicts deterministic "
-            f"signals: expected {expected_category}, "
-            f"received {actual_category or 'empty'}."
-        ),
-    )
-
-    trajectory = _clean_text(
-        report.get("risk_trajectory")
-    )
-    expected_trajectory = calibrate_trajectory(
-        level,
-        float(confidence),
-        trajectory,
-    )
-
-    _require(
-        trajectory == expected_trajectory,
-        (
-            "risk_trajectory contradicts deterministic "
-            f"calibration: expected {expected_trajectory}, "
-            f"received {trajectory or 'empty'}."
-        ),
-    )
-
-    if level == "LOW":
-        _validate_low_risk_language(
-            report
+    if score_available:
+        level = _clean_text(
+            report.get("risk_level")
+        ).upper()
+        _require(
+            level in VALID_RISK_LEVELS,
+            "Report contains an invalid risk_level.",
         )
 
-    raw_intelligence = report.get(
-        "raw_intelligence"
-    )
-    _require(
-        isinstance(raw_intelligence, dict),
-        "raw_intelligence must be an object.",
-    )
+        _validate_level_score_alignment(
+            report.get("risk_score"),
+            level,
+        )
+
+        expected_category = derive_primary_category(
+            signals
+        )
+        actual_category = _clean_text(
+            report.get("primary_risk_category")
+        )
+        _require(
+            actual_category == expected_category,
+            (
+                "primary_risk_category contradicts deterministic "
+                f"signals: expected {expected_category}, "
+                f"received {actual_category or 'empty'}."
+            ),
+        )
+
+        trajectory = _clean_text(
+            report.get("risk_trajectory")
+        )
+        expected_trajectory = calibrate_trajectory(
+            level,
+            float(confidence),
+            trajectory,
+        )
+        _require(
+            trajectory == expected_trajectory,
+            (
+                "risk_trajectory contradicts deterministic "
+                f"calibration: expected {expected_trajectory}, "
+                f"received {trajectory or 'empty'}."
+            ),
+        )
+
+        if level == "LOW":
+            _validate_low_risk_language(
+                report
+            )
+    else:
+        _validate_insufficient_evidence_outcome(
+            report,
+            raw_intelligence,
+        )
 
     _require(
         raw_intelligence.get(
@@ -508,6 +751,7 @@ def validate_calibrated_report_contract(
         report,
         raw_intelligence,
         tools_used,
+        require_citations=score_available,
     )
     _validate_provenance(
         report,
@@ -519,13 +763,11 @@ def validate_calibrated_report_contract(
         ensure_ascii=False,
         default=str,
     ).lower()
-
     exposed_markers = [
         marker
         for marker in SECRET_MARKERS
         if marker in serialized
     ]
-
     _require(
         not exposed_markers,
         (
